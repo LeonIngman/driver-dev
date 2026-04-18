@@ -303,14 +303,14 @@ app.get('/api/repos/:org/:repo', async (c) => {
     SELECT gi.account_login
     FROM connected_repos cr
     JOIN github_installations gi ON gi.installation_id = cr.installation_id
-    WHERE cr.repo_full_name = ${fullName}
+    WHERE LOWER(cr.repo_full_name) = LOWER(${fullName})
     LIMIT 1
   `
 
   const tagRows = await sql`
     SELECT ARRAY_AGG(DISTINCT elem) FILTER (WHERE elem IS NOT NULL) AS tags
     FROM issues, LATERAL UNNEST(labels) AS elem
-    WHERE repo_full_name = ${fullName}
+    WHERE LOWER(repo_full_name) = LOWER(${fullName})
   `
 
   const accountLogin = (inst?.account_login as string | null) ?? org
@@ -341,7 +341,7 @@ app.get('/api/repos/:org/:repo/issues', async (c) => {
     LEFT JOIN sessions s
       ON s.repo_full_name = i.repo_full_name
      AND s.issue_number   = i.issue_number
-    WHERE i.repo_full_name = ${fullName}
+    WHERE LOWER(i.repo_full_name) = LOWER(${fullName})
     GROUP BY i.issue_number, i.title, i.status, i.labels, i.salary, i.updated_at
     ORDER BY
       CASE i.status WHEN 'open' THEN 0 WHEN 'claimed' THEN 1 WHEN 'in_review' THEN 2 ELSE 3 END,
