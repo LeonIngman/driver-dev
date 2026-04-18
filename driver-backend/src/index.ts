@@ -382,6 +382,62 @@ app.get('/api/installations', async (c) => {
   return c.json({ installations: rows })
 })
 
+// ─── Developer Profile API ────────────────────────────
+
+/** Owner profile — full data for the logged-in developer */
+app.get('/api/developer/profile', (c) => {
+  return c.json({
+    username: 'jamie_k',
+    firstName: 'Jamie',
+    lastName: 'Klein',
+    initials: 'JK',
+    email: 'jamie@example.com',
+    githubConnected: true,
+    githubUsername: 'jamiek',
+    model: 'claude-3-7',
+    apiKeyMasked: 'sk-ant-...3f2a',
+    memberSince: '2025-11-15',
+    stats: {
+      issuesCompleted: 47,
+      totalEarned: 12400,
+      reposContributed: 8,
+      activeStreak: 14,
+    },
+    recentActivity: [
+      { type: 'completed', issueTitle: 'Fix race condition in streaming response handler', repo: 'anthropic/claude-tools', date: '2d ago', salary: 450 },
+      { type: 'completed', issueTitle: 'Add retry logic to batch API client', repo: 'anthropic/claude-tools', date: '4d ago', salary: 320 },
+      { type: 'submitted', issueTitle: 'Resolve memory leak in long-running sessions', repo: 'acme-corp/data-pipeline', date: '5d ago', salary: 600 },
+      { type: 'claimed', issueTitle: 'Implement cursor-based pagination for list endpoints', repo: 'acme-corp/data-pipeline', date: '6d ago', salary: 275 },
+      { type: 'completed', issueTitle: 'Fix incorrect token count in usage dashboard', repo: 'openai/tiktoken', date: '1w ago', salary: 180 },
+      { type: 'completed', issueTitle: 'Add TypeScript type exports for plugin API', repo: 'vercel/next.js', date: '1w ago', salary: 350 },
+      { type: 'submitted', issueTitle: 'Update OAuth scopes documentation', repo: 'anthropic/claude-tools', date: '2w ago', salary: 120 },
+      { type: 'completed', issueTitle: 'Fix CSS grid layout bug in settings panel', repo: 'acme-corp/dashboard', date: '2w ago', salary: 200 },
+    ],
+  })
+})
+
+/** Public profile — visible to anyone */
+app.get('/api/developer/profile/:username', (c) => {
+  const username = c.req.param('username')
+  return c.json({
+    username,
+    initials: username.slice(0, 2).toUpperCase(),
+    memberSince: '2025-11-15',
+    stats: {
+      issuesCompleted: 47,
+      totalEarned: 12400,
+      reposContributed: 8,
+    },
+    recentActivity: [
+      { type: 'completed', issueTitle: 'Fix race condition in streaming response handler', repo: 'anthropic/claude-tools', date: '2d ago', salary: 450 },
+      { type: 'completed', issueTitle: 'Add retry logic to batch API client', repo: 'anthropic/claude-tools', date: '4d ago', salary: 320 },
+      { type: 'submitted', issueTitle: 'Resolve memory leak in long-running sessions', repo: 'acme-corp/data-pipeline', date: '5d ago', salary: 600 },
+      { type: 'claimed', issueTitle: 'Implement cursor-based pagination for list endpoints', repo: 'acme-corp/data-pipeline', date: '6d ago', salary: 275 },
+      { type: 'completed', issueTitle: 'Fix incorrect token count in usage dashboard', repo: 'openai/tiktoken', date: '1w ago', salary: 180 },
+    ],
+  })
+})
+
 // ─── Issues API ───────────────────────────────────────────
 
 /** Fetch open issues from GitHub for all connected repos of an installation */
