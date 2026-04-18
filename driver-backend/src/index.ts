@@ -1290,8 +1290,6 @@ app.get('/api/company/issues', requireCompany, async (c) => {
   return c.json({ issues, total: issues.length })
 })
 
-<<<<<<< HEAD
-=======
 /** Repos for the filter dropdown */
 app.get('/api/company/repos', async (c) => {
   const rows = await sql`SELECT DISTINCT repo_full_name FROM connected_repos`
@@ -1385,6 +1383,5 @@ async function handleGithubEvent(event: string, payload: Record<string, unknown>
   }
 }
 
->>>>>>> cba2634 (feat: close issues via GitHub webhooks on PR merge or direct close)
 export const handler = handle(app)
 export default app

@@ -634,12 +634,34 @@ function Footer() {
 }
 
 /* ── Page ────────────────────────────────────────── */
+const API = process.env.API_URL ?? 'http://localhost:3001'
+
 export default async function LandingPage() {
   const cookieStore = await cookies()
   const token = cookieStore.get('token')?.value
 
-  const devHref = token ? '/developer/repos' : '/developer/signup'
-  const companyHref = token ? '/developer/repos' : '/company/signup'
+  let devHref = '/developer/signup'
+  let companyHref = '/company/signup'
+
+  if (token) {
+    try {
+      const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString()) as { sub: string; role: string }
+      if (payload.role === 'developer') {
+        const res = await fetch(`${API}/api/developer/profile`, {
+          cache: 'no-store',
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        if (res.ok) {
+          const profile = await res.json() as { apiKeyMasked: string | null }
+          devHref = profile.apiKeyMasked ? '/developer/repos' : `/developer/onboarding?id=${payload.sub}`
+        }
+      } else if (payload.role === 'company') {
+        companyHref = '/company/issues'
+      }
+    } catch {
+      // invalid token — fall back to signup links
+    }
+  }
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg-0)', display: 'flex', flexDirection: 'column' }}>
