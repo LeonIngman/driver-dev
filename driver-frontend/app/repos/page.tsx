@@ -195,7 +195,7 @@ export default async function ReposMarketplace() {
             {repos.map(repo => (
               <Link
                 key={`${repo.org}-${repo.name}`}
-                href="/repos/detail"
+                href={`/repos/${repo.org.toLowerCase()}/${repo.name}`}
                 style={{ textDecoration: 'none' }}
               >
                 <div

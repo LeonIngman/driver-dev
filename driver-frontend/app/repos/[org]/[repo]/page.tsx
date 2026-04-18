@@ -63,12 +63,11 @@ const labelCfg: Record<string, string> = {
 }
 
 export default async function RepoDetail({
-  searchParams,
+  params,
 }: {
-  searchParams: { org?: string; repo?: string }
+  params: Promise<{ org: string; repo: string }>
 }) {
-  const org = searchParams.org ?? 'anthropic'
-  const repo = searchParams.repo ?? 'claude-tools'
+  const { org, repo } = await params
 
   const [repoData, issues] = await Promise.all([fetchRepo(org, repo), fetchIssues(org, repo)])
 
