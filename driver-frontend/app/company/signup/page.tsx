@@ -1,8 +1,6 @@
 'use client'
 
 import Link from 'next/link'
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
 
 const API = process.env.NEXT_PUBLIC_API_URL
 
@@ -22,48 +20,6 @@ const Logo = () => (
 )
 
 export default function CompanySignup() {
-  const router = useRouter()
-  const [form, setForm] = useState({ orgName: '', email: '', password: '', confirmPassword: '' })
-  const [error, setError] = useState('')
-  const [loading, setLoading] = useState(false)
-
-  function set(field: string, value: string) {
-    setForm(f => ({ ...f, [field]: value }))
-  }
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    setError('')
-
-    if (form.password !== form.confirmPassword) {
-      setError('Passwords do not match.')
-      return
-    }
-
-    setLoading(true)
-    try {
-      const res = await fetch(`${API}/companies/signup`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ orgName: form.orgName, email: form.email, password: form.password }),
-      })
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}))
-        setError(data.message ?? 'Signup failed.')
-        return
-      }
-
-      router.push('/company/connect-repo')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  function handleGithubSignup() {
-    window.location.href = `${API}/auth/github?role=company`
-  }
-
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg-0)', display: 'flex' }}>
 
@@ -126,95 +82,22 @@ export default function CompanySignup() {
           <h2 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '1.5rem', color: 'var(--text-1)', marginBottom: '0.375rem' }}>
             Create company account
           </h2>
-          <p style={{ color: 'var(--text-2)', fontSize: '0.875rem', marginBottom: '2rem' }}>
+          <p style={{ color: 'var(--text-2)', fontSize: '0.875rem', marginBottom: '1.25rem' }}>
             Already have an account?{' '}
             <Link href="#" style={{ color: 'var(--blue)', textDecoration: 'none' }}>Sign in</Link>
           </p>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.625rem', marginBottom: '1.5rem' }}>
-            <button className="oauth-btn" type="button" onClick={handleGithubSignup}>
-              <GithubIcon />
-              <span>Continue with GitHub</span>
-              <span style={{ marginLeft: 'auto', fontSize: '0.7rem', color: 'var(--text-3)' }}>Recommended</span>
-            </button>
-          </div>
+          <button className="oauth-btn" type="button" onClick={() => { window.location.href = `${API}/auth/github?role=company` }}>
+            <GithubIcon />
+            <span>Continue with GitHub</span>
+          </button>
 
-          <div className="divider" style={{ marginBottom: '1.5rem' }}>or continue with email</div>
+          <p style={{ marginTop: '1.25rem', color: 'var(--text-2)', fontSize: '0.875rem' }}>
+            Signing up as a developer?{' '}
+            <Link href="/developer/signup" style={{ color: 'var(--blue)', textDecoration: 'none' }}>Developer sign up</Link>
+          </p>
 
-          <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-
-            <div>
-              <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-2)', marginBottom: '0.375rem' }}>
-                Organization name
-              </label>
-              <input
-                className="input"
-                type="text"
-                placeholder="Acme Corp"
-                value={form.orgName}
-                onChange={e => set('orgName', e.target.value)}
-                required
-              />
-            </div>
-
-            <div>
-              <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-2)', marginBottom: '0.375rem' }}>
-                Work email
-              </label>
-              <input
-                className="input"
-                type="email"
-                placeholder="you@company.com"
-                value={form.email}
-                onChange={e => set('email', e.target.value)}
-                required
-              />
-            </div>
-
-            <div>
-              <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-2)', marginBottom: '0.375rem' }}>
-                Password
-              </label>
-              <input
-                className="input"
-                type="password"
-                placeholder="Min 8 characters"
-                value={form.password}
-                onChange={e => set('password', e.target.value)}
-                required
-                minLength={8}
-              />
-            </div>
-
-            <div>
-              <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-2)', marginBottom: '0.375rem' }}>
-                Confirm password
-              </label>
-              <input
-                className="input"
-                type="password"
-                placeholder="Repeat password"
-                value={form.confirmPassword}
-                onChange={e => set('confirmPassword', e.target.value)}
-                required
-              />
-            </div>
-
-            {error && (
-              <p style={{ fontSize: '0.8rem', color: '#f87171', margin: 0 }}>{error}</p>
-            )}
-
-            <button type="submit" className="btn btn-blue" disabled={loading} style={{ width: '100%', marginTop: '0.25rem', padding: '0.75rem' }}>
-              {loading ? 'Creating account…' : 'Create company account'}
-              {!loading && (
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                  <path d="M2.5 7h9M7.5 3.5L11 7l-3.5 3.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
-              )}
-            </button>
-          </form>
-
-          <p style={{ marginTop: '1.25rem', fontSize: '0.72rem', color: 'var(--text-3)', lineHeight: 1.5 }}>
+          <p style={{ marginTop: '0.375rem', fontSize: '0.72rem', color: 'var(--text-3)', lineHeight: 1.5 }}>
             By creating an account you agree to our{' '}
             <Link href="#" style={{ color: 'var(--text-2)', textDecoration: 'underline' }}>Terms of Service</Link>
             {' '}and{' '}
