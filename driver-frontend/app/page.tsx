@@ -44,8 +44,6 @@ function Navbar() {
       <nav style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', marginLeft: '3rem', flex: 1 }}>
         {[
           { label: 'How it works', href: '#how' },
-          { label: 'Pricing', href: '#pricing' },
-          { label: 'Docs', href: '#docs' },
         ].map(link => (
           <a
             key={link.label}
