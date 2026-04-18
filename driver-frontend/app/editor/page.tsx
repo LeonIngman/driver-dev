@@ -1,13 +1,14 @@
 'use client'
 
 import Link from 'next/link'
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
+import MonacoEditor from '@monaco-editor/react'
 
 const API = process.env.NEXT_PUBLIC_API_URL
 
 /* ── Types ───────────────────────────────────────── */
-type FileNode = { name: string; type: 'file' | 'folder'; active?: boolean; children?: FileNode[]; ext?: string }
+type FileNode = { name: string; path: string; type: 'file' | 'folder'; active?: boolean; children?: FileNode[]; ext?: string }
 
 type Message = {
   role: 'claude' | 'user' | 'system'
@@ -23,7 +24,33 @@ type Session = {
   activeFile: { name: string; content: string }
 }
 
-const DEFAULT_CODE = `// Start writing your fix here`
+/* ── Helpers ─────────────────────────────────────── */
+const IGNORED = new Set(['node_modules', '.git', '.next', 'dist', 'build', '.cache', '.DS_Store', '__pycache__', '.turbo'])
+
+function extFromName(name: string): string | undefined {
+  const dot = name.lastIndexOf('.')
+  return dot > 0 ? name.slice(dot + 1) : undefined
+}
+
+function langFromPath(path: string | null): string {
+  if (!path) return 'plaintext'
+  const ext = extFromName(path)
+  const map: Record<string, string> = {
+    ts: 'typescript', tsx: 'typescript', js: 'javascript', jsx: 'javascript',
+    json: 'json', md: 'markdown', css: 'css', html: 'html', yml: 'yaml', yaml: 'yaml',
+    py: 'python', rs: 'rust', go: 'go', sql: 'sql', sh: 'shell', bash: 'shell',
+    xml: 'xml', svg: 'xml', toml: 'ini', env: 'ini',
+  }
+  return map[ext ?? ''] ?? 'plaintext'
+}
+
+function markActive(nodes: FileNode[], activePath: string): FileNode[] {
+  return nodes.map(n => ({
+    ...n,
+    active: n.type === 'file' ? n.path === activePath : false,
+    children: n.children ? markActive(n.children, activePath) : undefined,
+  }))
+}
 
 /* ── Static icons ────────────────────────────────── */
 const Logo = () => (
@@ -43,12 +70,12 @@ const AnthropicMark = () => (
 )
 
 function FileIcon({ ext }: { ext?: string }) {
-  const colors: Record<string, string> = { ts: '#3B82F6', json: '#FBBF24', md: '#34D399', js: '#FBBF24' }
+  const colors: Record<string, string> = { ts: '#3B82F6', tsx: '#3B82F6', json: '#FBBF24', md: '#34D399', js: '#FBBF24', jsx: '#FBBF24', css: '#A78BFA', html: '#F87171', py: '#3B82F6', go: '#38BDF8', rs: '#F97316' }
   const c = colors[ext ?? ''] ?? 'var(--text-3)'
   return <div style={{ width: 8, height: 8, borderRadius: 1.5, background: c, flexShrink: 0 }} />
 }
 
-function FolderIcon() {
+function FolderIcon({ open }: { open?: boolean }) {
   return (
     <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
       <path d="M1 4a1 1 0 011-1h3.2l1.3 1.3H11a1 1 0 011 1V10a1 1 0 01-1 1H2a1 1 0 01-1-1V4z" fill="var(--blue-bg)" stroke="var(--blue-border)" strokeWidth="0.9"/>
@@ -56,38 +83,53 @@ function FolderIcon() {
   )
 }
 
-function TreeNode({ node, depth = 0, onRemove }: { node: FileNode; depth?: number; onRemove: (name: string) => void }) {
+function TreeNode({ node, depth = 0, onFileClick }: { node: FileNode; depth?: number; onFileClick: (path: string) => void }) {
+  const [open, setOpen] = useState(depth < 2)
+
   return (
     <>
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: '0.4rem',
-        padding: '0.28rem 0.5rem', paddingLeft: `${0.5 + depth * 1}rem`,
-        borderRadius: 5, cursor: 'pointer',
-        background: node.active ? 'var(--blue-bg)' : 'transparent',
-        fontSize: '0.78rem',
-        color: node.active ? 'var(--blue)' : 'var(--text-2)',
-        fontFamily: node.type === 'file' ? 'var(--font-mono)' : undefined,
-      }}>
-        {node.type === 'folder' ? <FolderIcon /> : <FileIcon ext={node.ext} />}
-        <span style={{ flex: 1 }}>{node.name}</span>
-        {node.type === 'file' && (
-          <button
-            onClick={e => { e.stopPropagation(); onRemove(node.name) }}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', lineHeight: 1, padding: '0 2px', fontSize: '0.8rem', display: 'flex', alignItems: 'center' }}
-          >×</button>
-        )}
+      <div
+        onClick={() => {
+          if (node.type === 'folder') setOpen(o => !o)
+          else onFileClick(node.path)
+        }}
+        style={{
+          display: 'flex', alignItems: 'center', gap: '0.4rem',
+          padding: '0.28rem 0.5rem', paddingLeft: `${0.5 + depth * 1}rem`,
+          borderRadius: 5, cursor: 'pointer',
+          background: node.active ? 'var(--blue-bg)' : 'transparent',
+          fontSize: '0.78rem',
+          color: node.active ? 'var(--blue)' : 'var(--text-2)',
+          fontFamily: node.type === 'file' ? 'var(--font-mono)' : undefined,
+        }}
+      >
+        {node.type === 'folder' ? (
+          <>
+            <svg width="8" height="8" viewBox="0 0 8 8" fill="none" style={{ flexShrink: 0, transition: 'transform 0.1s', transform: open ? 'rotate(90deg)' : 'rotate(0deg)' }}>
+              <path d="M2 1L6 4L2 7" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+            <FolderIcon open={open} />
+          </>
+        ) : <FileIcon ext={node.ext} />}
+        <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{node.name}</span>
       </div>
-      {node.children?.map(child => (
-        <TreeNode key={child.name} node={child} depth={depth + 1} onRemove={onRemove} />
+      {node.type === 'folder' && open && node.children?.map(child => (
+        <TreeNode key={child.path} node={child} depth={depth + 1} onFileClick={onFileClick} />
       ))}
     </>
   )
 }
 
-function removeFile(nodes: FileNode[], name: string): FileNode[] {
-  return nodes
-    .filter(n => n.name !== name)
-    .map(n => n.children ? { ...n, children: removeFile(n.children, name) } : n)
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false)
+  return (
+    <button
+      onClick={() => { navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 1500) }}
+      style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 4, cursor: 'pointer', color: 'var(--text-3)', padding: '0.2rem 0.4rem', fontSize: '0.65rem', fontFamily: 'var(--font-mono)', display: 'flex', alignItems: 'center', gap: '0.25rem' }}
+    >
+      {copied ? 'Copied' : 'Copy'}
+    </button>
+  )
 }
 
 /* ── Page ────────────────────────────────────────── */
@@ -101,24 +143,35 @@ export default function Editor() {
   const [messages, setMessages] = useState<Message[]>([])
   const [chatInput, setChatInput] = useState('')
   const [submitting, setSubmitting] = useState(false)
-  const [code, setCode] = useState(DEFAULT_CODE)
-  const [activeTab, setActiveTab] = useState<'Code' | 'Preview'>('Code')
   const [chatOpen, setChatOpen] = useState(true)
   const [filesOpen, setFilesOpen] = useState(false)
-  // Preview tab is a placeholder — will be replaced with e2b sandbox
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
+  // File system state
+  const [folderOpen, setFolderOpen] = useState(false)
+  const [folderName, setFolderName] = useState('')
+  const [dirHandle, setDirHandle] = useState<FileSystemDirectoryHandle | null>(null)
+  const [fileHandles, setFileHandles] = useState<Map<string, FileSystemFileHandle>>(new Map())
+  const fileContentsRef = useRef<Map<string, string>>(new Map())
+  const [activeFilePath, setActiveFilePath] = useState<string | null>(null)
+  const [editorContent, setEditorContent] = useState('')
+  const [saveStatus, setSaveStatus] = useState<'saved' | 'unsaved' | 'saving'>('saved')
+  const folderInputRef = useRef<HTMLInputElement>(null)
+
+  // Ensure webkitdirectory is set on the hidden input (React may strip non-standard attrs)
+  useEffect(() => {
+    if (folderInputRef.current) {
+      folderInputRef.current.setAttribute('webkitdirectory', '')
+      folderInputRef.current.setAttribute('directory', '')
+    }
+  }, [])
+
+  // Fetch session data
   useEffect(() => {
     if (!sessionId) return
     fetch(`${API}/api/sessions/${sessionId}`)
       .then(r => r.ok ? r.json() : null)
-      .then((data: Session | null) => {
-        if (data) {
-          setSession(data)
-          setFiles(data.files ?? [])
-          if (data.activeFile?.content) setCode(data.activeFile.content)
-        }
-      })
+      .then((data: Session | null) => { if (data) setSession(data) })
       .catch(() => {})
 
     fetch(`${API}/api/sessions/${sessionId}/messages`)
@@ -130,6 +183,208 @@ export default function Editor() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
+
+  // ── File System Access API ────────────────────
+  async function readDirTree(
+    handle: FileSystemDirectoryHandle,
+    prefix = '',
+    handles: Map<string, FileSystemFileHandle> = new Map()
+  ): Promise<{ nodes: FileNode[]; handles: Map<string, FileSystemFileHandle> }> {
+    const folders: FileNode[] = []
+    const fileNodes: FileNode[] = []
+
+    // @ts-expect-error — File System Access API types not in default lib
+    for await (const entry of handle.values() as AsyncIterable<FileSystemHandle & { kind: 'file' | 'directory'; name: string }>) {
+      if (IGNORED.has(entry.name)) continue
+      const path = prefix ? `${prefix}/${entry.name}` : entry.name
+
+      if (entry.kind === 'directory') {
+        const sub = await readDirTree(entry as FileSystemDirectoryHandle, path, handles)
+        folders.push({
+          name: entry.name, path, type: 'folder',
+          ext: undefined,
+          children: sub.nodes,
+        })
+      } else {
+        handles.set(path, entry as FileSystemFileHandle)
+        fileNodes.push({
+          name: entry.name, path, type: 'file',
+          ext: extFromName(entry.name),
+        })
+      }
+    }
+
+    // Sort: folders first (alphabetical), then files (alphabetical)
+    folders.sort((a, b) => a.name.localeCompare(b.name))
+    fileNodes.sort((a, b) => a.name.localeCompare(b.name))
+
+    return { nodes: [...folders, ...fileNodes], handles }
+  }
+
+  async function openFolder() {
+    // @ts-expect-error — File System Access API not in default TS lib
+    const hasNativeAPI = typeof window.showDirectoryPicker === 'function'
+
+    if (hasNativeAPI) {
+      try {
+        // @ts-expect-error — File System Access API not in default TS lib
+        const dirH = await window.showDirectoryPicker({ mode: 'readwrite' }) as FileSystemDirectoryHandle
+        setDirHandle(dirH)
+        setFolderName(dirH.name)
+        const { nodes, handles } = await readDirTree(dirH)
+        setFiles(nodes)
+        setFileHandles(handles)
+        setFolderOpen(true)
+        setFilesOpen(true)
+        return
+      } catch (err) {
+        if (err instanceof DOMException && err.name === 'AbortError') return
+        // Native API failed (e.g. Brave blocks it) — fall through to input fallback
+        console.warn('Native folder picker failed, using fallback:', err)
+      }
+    }
+
+    // Fallback: trigger <input webkitdirectory>
+    folderInputRef.current?.click()
+  }
+
+  function handleFolderInput(e: React.ChangeEvent<HTMLInputElement>) {
+    const inputFiles = e.target.files
+    if (!inputFiles || inputFiles.length === 0) return
+
+    const contents = new Map<string, string>()
+    const nodeMap = new Map<string, FileNode>()
+    const roots: FileNode[] = []
+
+    // Determine the common root folder name
+    const firstPath = inputFiles[0].webkitRelativePath
+    const rootName = firstPath.split('/')[0] ?? 'folder'
+    setFolderName(rootName)
+
+    let pending = inputFiles.length
+
+    Array.from(inputFiles).forEach(file => {
+      // webkitRelativePath = "rootFolder/sub/file.ts"
+      const relPath = file.webkitRelativePath
+      // Strip the root folder prefix so paths are relative
+      const path = relPath.split('/').slice(1).join('/')
+      if (!path) { pending--; checkDone(); return }
+
+      // Skip ignored directories
+      const parts = path.split('/')
+      if (parts.some(p => IGNORED.has(p))) { pending--; checkDone(); return }
+
+      const reader = new FileReader()
+      reader.onload = () => {
+        contents.set(path, reader.result as string)
+        pending--
+        checkDone()
+      }
+      reader.onerror = () => { pending--; checkDone() }
+      reader.readAsText(file)
+
+      // Build tree nodes
+      for (let i = 0; i < parts.length; i++) {
+        const current = parts.slice(0, i + 1).join('/')
+        if (nodeMap.has(current)) continue
+        const isFile = i === parts.length - 1
+        const node: FileNode = {
+          name: parts[i],
+          path: current,
+          type: isFile ? 'file' : 'folder',
+          ext: isFile ? extFromName(parts[i]) : undefined,
+          children: isFile ? undefined : [],
+        }
+        nodeMap.set(current, node)
+
+        if (i === 0) {
+          roots.push(node)
+        } else {
+          const parentPath = parts.slice(0, i).join('/')
+          nodeMap.get(parentPath)?.children?.push(node)
+        }
+      }
+    })
+
+    function sortNodes(nodes: FileNode[]) {
+      nodes.sort((a, b) => {
+        if (a.type !== b.type) return a.type === 'folder' ? -1 : 1
+        return a.name.localeCompare(b.name)
+      })
+      nodes.forEach(n => { if (n.children) sortNodes(n.children) })
+    }
+
+    function checkDone() {
+      if (pending > 0) return
+      sortNodes(roots)
+      fileContentsRef.current = contents
+      setFiles(roots)
+      setFolderOpen(true)
+      setFilesOpen(true)
+    }
+
+    // Reset input so re-selecting the same folder works
+    e.target.value = ''
+  }
+
+  async function openFile(path: string) {
+    // Try native handle first, then fall back to in-memory contents
+    const handle = fileHandles.get(path)
+    if (handle) {
+      const file = await handle.getFile()
+      const text = await file.text()
+      setEditorContent(text)
+    } else {
+      const text = fileContentsRef.current.get(path)
+      if (text === undefined) return
+      setEditorContent(text)
+    }
+    setActiveFilePath(path)
+    setSaveStatus('saved')
+    setFiles(prev => markActive(prev, path))
+  }
+
+  const saveFile = useCallback(async () => {
+    if (!activeFilePath) return
+    setSaveStatus('saving')
+
+    // Try native write first
+    const handle = fileHandles.get(activeFilePath)
+    if (handle) {
+      try {
+        const writable = await handle.createWritable()
+        await writable.write(editorContent)
+        await writable.close()
+        setSaveStatus('saved')
+        return
+      } catch {
+        // Fall through to download
+      }
+    }
+
+    // Fallback: update in-memory contents + trigger download
+    fileContentsRef.current.set(activeFilePath, editorContent)
+    const blob = new Blob([editorContent], { type: 'text/plain' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = activeFilePath.split('/').pop() ?? 'file'
+    a.click()
+    URL.revokeObjectURL(url)
+    setSaveStatus('saved')
+  }, [activeFilePath, fileHandles, editorContent])
+
+  // Cmd+S / Ctrl+S keyboard shortcut
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+        e.preventDefault()
+        saveFile()
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [saveFile])
 
   function handleSend() {
     if (!chatInput.trim()) return
@@ -151,12 +406,21 @@ export default function Editor() {
   const issue = session?.issue
   const diff = session?.diff
   const usage = session?.usage
-  const userInitials = session?.user.initials ?? '?'
-  const changedCount = files.filter(f => f.type === 'file' && f.active).length
-  const activeFile = session?.activeFile ?? { name: 'index.html', content: '' }
+  const userInitials = session?.user?.initials ?? '?'
+  const activeFileName = activeFilePath?.split('/').pop() ?? 'No file open'
+  const activeExt = activeFilePath ? extFromName(activeFilePath) : undefined
+
+  // Derive repo clone URL from session
+  const repoName = issue?.repoName ?? ''
+  const cloneUrl = repoName ? `https://github.com/${repoName}.git` : ''
+  const branchName = issue ? `fix/issue-${issue.id}` : 'fix/issue'
 
   return (
     <div style={{ display: 'flex', height: '100vh', flexDirection: 'column', background: 'var(--bg-0)', overflow: 'hidden' }}>
+
+      {/* Hidden input for folder fallback (Firefox, Safari, Brave) */}
+      {/* @ts-expect-error — webkitdirectory is non-standard but widely supported */}
+      <input ref={folderInputRef} type="file" webkitdirectory="" style={{ display: 'none' }} onChange={handleFolderInput} />
 
       {/* Global top bar */}
       <div style={{
@@ -169,21 +433,23 @@ export default function Editor() {
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', fontSize: '0.75rem', color: 'var(--text-3)', marginLeft: '0.5rem' }}>
           <Link href="/repos" style={{ color: 'var(--text-3)', textDecoration: 'none' }}>Browse</Link>
           <span>/</span>
-          <Link href="/repos/detail" style={{ color: 'var(--text-3)', textDecoration: 'none' }}>{issue?.repoName ?? '…'}</Link>
+          <Link href="/repos/detail" style={{ color: 'var(--text-3)', textDecoration: 'none' }}>{repoName || '...'}</Link>
           <span>/</span>
           <span style={{ color: 'var(--text-1)', fontWeight: 500 }}>
-            {issue ? `#${issue.id} · ${issue.title}` : '…'}
+            {issue ? `#${issue.id} · ${issue.title}` : '...'}
           </span>
         </div>
 
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', background: 'var(--green-bg)', border: '1px solid rgba(52,211,153,0.25)', borderRadius: 5, padding: '0.25rem 0.625rem' }}>
-            <span className="live-dot" />
-            <span style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--green)' }}>Preview live</span>
-          </div>
+          {folderOpen && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', background: 'var(--green-bg)', border: '1px solid rgba(52,211,153,0.25)', borderRadius: 5, padding: '0.25rem 0.625rem' }}>
+              <span className="live-dot" />
+              <span style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--green)' }}>Workspace open</span>
+            </div>
+          )}
 
           <button className="btn btn-orange" style={{ padding: '0.4rem 0.875rem', fontSize: '0.78rem' }} onClick={handleSubmit} disabled={submitting}>
-            {submitting ? 'Submitting…' : 'Submit for Review'}
+            {submitting ? 'Submitting...' : 'Submit for Review'}
             {!submitting && (
               <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
                 <path d="M2 6h8M6.5 2.5L10 6l-3.5 3.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
@@ -206,7 +472,6 @@ export default function Editor() {
           background: 'var(--bg-1)', borderRight: '1px solid var(--border)',
           display: 'flex', flexDirection: 'column', overflow: 'hidden',
         }}>
-          {/* Collapsed strip */}
           {!chatOpen && (
             <button
               onClick={() => setChatOpen(true)}
@@ -279,7 +544,7 @@ export default function Editor() {
           <div style={{ padding: '0.75rem', borderTop: '1px solid var(--border)', background: 'var(--bg-1)' }}>
             <div style={{ background: 'var(--bg-0)', border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
               <textarea
-                placeholder="Ask Claude to adjust the fix…"
+                placeholder="Ask Claude to adjust the fix..."
                 rows={3}
                 value={chatInput}
                 onChange={e => setChatInput(e.target.value)}
@@ -291,7 +556,7 @@ export default function Editor() {
                 }}
               />
               <div style={{ padding: '0.375rem 0.625rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid var(--border)' }}>
-                <span style={{ fontSize: '0.67rem', color: 'var(--text-3)', fontFamily: 'var(--font-mono)' }}>↵ to send · ⇧↵ newline</span>
+                <span style={{ fontSize: '0.67rem', color: 'var(--text-3)', fontFamily: 'var(--font-mono)' }}>Enter to send</span>
                 <button className="btn btn-blue" style={{ padding: '0.3rem 0.7rem', fontSize: '0.75rem' }} onClick={handleSend}>
                   Send
                   <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
@@ -314,11 +579,10 @@ export default function Editor() {
 
         {/* ── PANEL 2: File tree ─────────────────────── */}
         <div style={{
-          width: filesOpen ? 200 : 32, minWidth: filesOpen ? 200 : 32,
+          width: filesOpen ? 240 : 32, minWidth: filesOpen ? 240 : 32,
           background: 'var(--bg-1)', borderRight: '1px solid var(--border)',
           display: 'flex', flexDirection: 'column', overflow: 'hidden',
         }}>
-          {/* Collapsed strip */}
           {!filesOpen && (
             <button
               onClick={() => setFilesOpen(true)}
@@ -333,9 +597,6 @@ export default function Editor() {
           <div style={{ padding: '0.625rem 0.75rem', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <span style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Files</span>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
-              {changedCount > 0 && (
-                <span className="badge badge-blue" style={{ fontSize: '0.58rem' }}>{changedCount} changed</span>
-              )}
               <button onClick={() => setFilesOpen(false)} title="Collapse files" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', display: 'flex', alignItems: 'center', padding: '0.1rem' }}>
                 <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M8 2.5L4 6.5L8 10.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
               </button>
@@ -343,100 +604,158 @@ export default function Editor() {
           </div>
 
           <div style={{ flex: 1, overflowY: 'auto', padding: '0.375rem' }}>
-            {files.map(node => <TreeNode key={node.name} node={node} onRemove={name => setFiles(f => removeFile(f, name))} />)}
+            {files.length === 0 && !folderOpen && (
+              <div style={{ padding: '1rem 0.5rem', textAlign: 'center' }}>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-3)', marginBottom: '0.5rem' }}>No folder open</div>
+                <button className="btn btn-blue" style={{ fontSize: '0.72rem', padding: '0.3rem 0.6rem' }} onClick={openFolder}>
+                  Open Folder
+                </button>
+              </div>
+            )}
+            {files.map(node => <TreeNode key={node.path} node={node} onFileClick={openFile} />)}
           </div>
 
-          {diff && (
-            <div style={{ padding: '0.625rem 0.75rem', borderTop: '1px solid var(--border)', background: 'var(--bg-0)' }}>
-              <div style={{ fontSize: '0.68rem', color: 'var(--text-3)', marginBottom: '0.375rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Diff summary</div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--green)' }}>+{diff.added}</span>
-                <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--red)' }}>-{diff.removed}</span>
-                <div style={{ flex: 1, height: 4, borderRadius: 2, background: 'var(--border)', overflow: 'hidden' }}>
-                  <div style={{ height: '100%', width: `${Math.round(diff.added / (diff.added + diff.removed) * 100)}%`, background: 'var(--green)', borderRadius: 2 }} />
-                </div>
+          {folderOpen && (
+            <div style={{ padding: '0.5rem 0.75rem', borderTop: '1px solid var(--border)', background: 'var(--bg-0)' }}>
+              <div style={{ fontSize: '0.68rem', color: 'var(--text-3)', fontFamily: 'var(--font-mono)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {folderName}
               </div>
             </div>
           )}
           </>)}
         </div>
 
-        {/* ── PANEL 3: Editor / Preview ─────────────── */}
+        {/* ── PANEL 3: Editor ──────────────────────────── */}
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: 'var(--bg-0)' }}>
 
-          {/* Toolbar */}
-          <div style={{
-            height: 38, minHeight: 38,
-            background: 'var(--bg-1)', borderBottom: '1px solid var(--border)',
-            display: 'flex', alignItems: 'center', padding: '0 0.875rem', gap: '0.5rem',
-          }}>
-            {/* Active file tab */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.125rem', flex: 1 }}>
-              <div style={{
-                display: 'flex', alignItems: 'center', gap: '0.375rem',
-                padding: '0.25rem 0.75rem', borderRadius: '5px 5px 0 0',
-                background: 'var(--bg-0)', borderBottom: '2px solid var(--blue)', cursor: 'pointer',
-              }}>
-                <span className="lang-dot lang-ts" style={{ width: 7, height: 7 }} />
-                <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.75rem', color: 'var(--text-1)' }}>{activeFile.name}</span>
-                <div style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--orange)' }} />
+          {/* Toolbar — only show when a folder is open */}
+          {folderOpen && (
+            <div style={{
+              height: 38, minHeight: 38,
+              background: 'var(--bg-1)', borderBottom: '1px solid var(--border)',
+              display: 'flex', alignItems: 'center', padding: '0 0.875rem', gap: '0.5rem',
+            }}>
+              {/* Active file tab */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.125rem', flex: 1 }}>
+                {activeFilePath && (
+                  <div style={{
+                    display: 'flex', alignItems: 'center', gap: '0.375rem',
+                    padding: '0.25rem 0.75rem', borderRadius: '5px 5px 0 0',
+                    background: 'var(--bg-0)', borderBottom: '2px solid var(--blue)', cursor: 'pointer',
+                  }}>
+                    <FileIcon ext={activeExt} />
+                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.75rem', color: 'var(--text-1)' }}>{activeFileName}</span>
+                    {saveStatus === 'unsaved' && (
+                      <div style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--orange)' }} />
+                    )}
+                  </div>
+                )}
               </div>
+
+              {/* Save button */}
+              <button
+                className={`btn ${saveStatus === 'unsaved' ? 'btn-blue' : 'btn-ghost'}`}
+                style={{ padding: '0.25rem 0.5rem', fontSize: '0.72rem' }}
+                onClick={saveFile}
+                disabled={saveStatus !== 'unsaved'}
+              >
+                {saveStatus === 'saving' ? 'Saving...' : saveStatus === 'saved' ? 'Saved' : 'Save'}
+              </button>
             </div>
-
-            {/* Code / Preview toggle */}
-            <div style={{ display: 'flex', background: 'var(--bg-3)', border: '1px solid var(--border)', borderRadius: 6, padding: 2 }}>
-              {(['Code', 'Preview'] as const).map(tab => (
-                <button
-                  key={tab}
-                  onClick={() => setActiveTab(tab)}
-                  style={{
-                    padding: '0.2rem 0.625rem', fontSize: '0.72rem', fontWeight: 600,
-                    border: 'none', borderRadius: 4, cursor: 'pointer',
-                    background: activeTab === tab ? 'var(--bg-1)' : 'transparent',
-                    color: activeTab === tab ? 'var(--text-1)' : 'var(--text-3)',
-                    fontFamily: 'var(--font-body)', transition: 'all 0.1s',
-                  }}
-                >
-                  {tab}
-                </button>
-              ))}
-            </div>
-
-            <button className="btn btn-ghost" style={{ padding: '0.25rem 0.5rem', fontSize: '0.72rem' }}>
-              <svg width="11" height="11" viewBox="0 0 11 11" fill="none"><path d="M1 5.5h9M6.5 2L10 5.5 6.5 9" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/></svg>
-              Run tests
-            </button>
-          </div>
-
-          {/* Code editor — real textarea */}
-          {activeTab === 'Code' && (
-            <textarea
-              value={code}
-              onChange={e => setCode(e.target.value)}
-              spellCheck={false}
-              style={{
-                flex: 1,
-                width: '100%',
-                background: 'var(--bg-0)',
-                border: 'none',
-                outline: 'none',
-                resize: 'none',
-                padding: '1rem 1rem 1rem 3rem',
-                fontFamily: 'var(--font-mono)',
-                fontSize: '0.8rem',
-                lineHeight: '1.6rem',
-                color: 'var(--text-1)',
-                tabSize: 2,
-              }}
-            />
           )}
 
-          {/* Preview — e2b sandbox placeholder */}
-          {activeTab === 'Preview' && (
+          {/* Onboarding: workspace setup — shown when no folder open */}
+          {!folderOpen && (
             <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-1)' }}>
+              <div style={{ maxWidth: 480, width: '100%', padding: '2rem' }}>
+                <div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-1)', marginBottom: '0.25rem', fontFamily: 'var(--font-display)' }}>
+                  Set up your workspace
+                </div>
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-3)', marginBottom: '1.5rem' }}>
+                  Clone the repository and open the folder to start working on this issue.
+                </div>
+
+                {/* Step 1 */}
+                <div style={{ marginBottom: '1.25rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                    <div style={{ width: 20, height: 20, borderRadius: '50%', background: 'var(--blue)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <span style={{ fontSize: '0.65rem', fontWeight: 700, color: '#fff' }}>1</span>
+                    </div>
+                    <span style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-1)' }}>Clone the repository</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'var(--bg-0)', border: '1px solid var(--border)', borderRadius: 6, padding: '0.5rem 0.75rem' }}>
+                    <code style={{ flex: 1, fontFamily: 'var(--font-mono)', fontSize: '0.78rem', color: 'var(--text-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      git clone {cloneUrl || 'https://github.com/org/repo.git'}
+                    </code>
+                    <CopyButton text={`git clone ${cloneUrl || 'https://github.com/org/repo.git'}`} />
+                  </div>
+                </div>
+
+                {/* Step 2 */}
+                <div style={{ marginBottom: '1.5rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                    <div style={{ width: 20, height: 20, borderRadius: '50%', background: 'var(--blue)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <span style={{ fontSize: '0.65rem', fontWeight: 700, color: '#fff' }}>2</span>
+                    </div>
+                    <span style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-1)' }}>Create your fix branch</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'var(--bg-0)', border: '1px solid var(--border)', borderRadius: 6, padding: '0.5rem 0.75rem' }}>
+                    <code style={{ flex: 1, fontFamily: 'var(--font-mono)', fontSize: '0.78rem', color: 'var(--text-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      git checkout -b {branchName}
+                    </code>
+                    <CopyButton text={`git checkout -b ${branchName}`} />
+                  </div>
+                </div>
+
+                {/* Step 3: Open folder */}
+                <div style={{ marginBottom: '1rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                    <div style={{ width: 20, height: 20, borderRadius: '50%', background: 'var(--blue)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <span style={{ fontSize: '0.65rem', fontWeight: 700, color: '#fff' }}>3</span>
+                    </div>
+                    <span style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-1)' }}>Open your local copy</span>
+                  </div>
+                </div>
+
+                <button className="btn btn-orange" style={{ width: '100%', padding: '0.625rem 1rem', fontSize: '0.85rem', justifyContent: 'center' }} onClick={openFolder}>
+                  <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
+                    <path d="M1.5 5a1.5 1.5 0 011.5-1.5h3.5l1.5 1.5H12a1.5 1.5 0 011.5 1.5v5a1.5 1.5 0 01-1.5 1.5H3A1.5 1.5 0 011.5 11.5V5z" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                  Open Local Folder
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Monaco editor — shown when folder is open */}
+          {folderOpen && activeFilePath && (
+            <div style={{ flex: 1, overflow: 'hidden' }}>
+              <MonacoEditor
+                value={editorContent}
+                language={langFromPath(activeFilePath)}
+                theme="light"
+                onChange={val => { setEditorContent(val ?? ''); setSaveStatus('unsaved') }}
+                options={{
+                  fontSize: 13,
+                  minimap: { enabled: false },
+                  scrollBeyondLastLine: false,
+                  padding: { top: 12 },
+                  lineNumbers: 'on',
+                  renderLineHighlight: 'line',
+                  fontFamily: 'var(--font-mono), monospace',
+                  tabSize: 2,
+                  wordWrap: 'on',
+                }}
+              />
+            </div>
+          )}
+
+          {/* Empty state when folder open but no file selected */}
+          {folderOpen && !activeFilePath && (
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-0)' }}>
               <div style={{ textAlign: 'center' }}>
-                <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-2)', marginBottom: '0.375rem' }}>Preview coming soon</div>
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-3)' }}>Will be powered by e2b</div>
+                <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-2)', marginBottom: '0.375rem' }}>Select a file to edit</div>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-3)' }}>Choose a file from the tree on the left</div>
               </div>
             </div>
           )}
@@ -446,17 +765,31 @@ export default function Editor() {
             height: 24, minHeight: 24, background: 'var(--blue-dim)',
             display: 'flex', alignItems: 'center', padding: '0 0.875rem', gap: '1.25rem',
           }}>
-            {['HTML', 'UTF-8', 'LF'].map(label => (
-              <span key={label} style={{ fontFamily: 'var(--font-mono)', fontSize: '0.65rem', color: 'rgba(255,255,255,0.55)' }}>{label}</span>
-            ))}
-            <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.65rem', color: 'rgba(255,255,255,0.55)' }}>
-              {code.length} chars
-            </span>
+            {activeFilePath && (
+              <>
+                <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.65rem', color: 'rgba(255,255,255,0.55)' }}>{langFromPath(activeFilePath)}</span>
+                <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.65rem', color: 'rgba(255,255,255,0.55)' }}>UTF-8</span>
+                <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.65rem', color: 'rgba(255,255,255,0.55)' }}>
+                  {editorContent.length} chars
+                </span>
+              </>
+            )}
             <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
-              <span className="live-dot" style={{ width: 5, height: 5 }} />
-              <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.65rem', color: 'rgba(255,255,255,0.7)' }}>
-                {activeTab === 'Preview' ? 'Preview live' : 'Editing'}
-              </span>
+              {saveStatus === 'unsaved' && (
+                <>
+                  <div style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--orange)' }} />
+                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.65rem', color: 'rgba(255,255,255,0.7)' }}>Unsaved</span>
+                </>
+              )}
+              {saveStatus === 'saved' && activeFilePath && (
+                <>
+                  <span className="live-dot" style={{ width: 5, height: 5 }} />
+                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.65rem', color: 'rgba(255,255,255,0.7)' }}>Saved</span>
+                </>
+              )}
+              {saveStatus === 'saving' && (
+                <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.65rem', color: 'rgba(255,255,255,0.7)' }}>Saving...</span>
+              )}
             </div>
           </div>
         </div>
