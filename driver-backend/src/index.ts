@@ -4,9 +4,12 @@ import { handle } from 'hono/aws-lambda'
 import { sql, initDb } from './db.js'
 import {
   createAppJwt,
+  exchangeCodeForToken,
+  getUser,
   getInstallationRepos,
   getRepoIssues,
 } from './github.js'
+import developers from './developers.js'
 
 const app = new Hono()
 
@@ -15,30 +18,117 @@ app.use('*', cors())
 // Initialize DB tables on startup
 initDb().catch(console.error)
 
-app.get('/', (c) => c.text('Hello Hono!'))
+/** Root — also handles GitHub OAuth callback when redirect_uri points here */
+app.get('/', async (c) => {
+  const code = c.req.query('code')
+  const state = c.req.query('state')
+  const frontendUrl = process.env.FRONTEND_URL ?? 'http://localhost:3000'
 
-// ─── GitHub OAuth ──────────────────────────────────────────
+  if (code && state === 'developer') {
+    const { access_token } = await exchangeCodeForToken(code)
+    const ghUser = await getUser(access_token) as {
+      id: number
+      login: string
+      email: string | null
+      name: string | null
+    }
 
-/** Redirect user to install the GitHub App on their org/account */
+    const [dev] = await sql`
+      INSERT INTO developers (github_id, username, email, first_name, last_name)
+      VALUES (
+        ${String(ghUser.id)},
+        ${ghUser.login},
+        ${ghUser.email ?? ''},
+        ${ghUser.name?.split(' ')[0] ?? ghUser.login},
+        ${ghUser.name?.split(' ').slice(1).join(' ') ?? ''}
+      )
+      ON CONFLICT (github_id) DO UPDATE SET
+        username = EXCLUDED.username
+      RETURNING id, anthropic_api_key
+    `
+
+    // If they already have an API key (returning user), go straight to the app
+    if (dev.anthropic_api_key) {
+      return c.redirect(`${frontendUrl}/repos`)
+    }
+
+    return c.redirect(`${frontendUrl}/developer/onboarding?id=${dev.id}`)
+  }
+
+  return c.text('Hello Hono!')
+})
+
+app.route('/developers', developers)
+
+// ─── GitHub Auth ───────────────────────────────────────────
+
+/**
+ * GET /auth/github?role=developer  → GitHub OAuth (developer login)
+ * GET /auth/github                 → GitHub App installation (company onboarding)
+ */
 app.get('/auth/github', (c) => {
+  const role = c.req.query('role')
+
+  if (role === 'developer') {
+    const params = new URLSearchParams({
+      client_id: process.env.GITHUB_CLIENT_ID!,
+      scope: 'user:email',
+      state: 'developer',
+    })
+    return c.redirect(`https://github.com/login/oauth/authorize?${params}`)
+  }
+
+  // Company onboarding: install the GitHub App
   const slug = process.env.GITHUB_APP_SLUG!
   return c.redirect(`https://github.com/apps/${slug}/installations/new`)
 })
 
 /**
- * After installation, GitHub redirects to the Setup URL (configured in your
- * GitHub App settings). Set that to:
- *   http://localhost:3001/auth/github/callback
+ * GitHub redirects here for both flows:
  *
- * GitHub sends ?installation_id=123&setup_action=install
+ * Developer OAuth:  ?code=...&state=developer
+ * App installation: ?installation_id=...&setup_action=install
  */
 app.get('/auth/github/callback', async (c) => {
+  const code = c.req.query('code')
+  const state = c.req.query('state')
+  const frontendUrl = process.env.FRONTEND_URL ?? 'http://localhost:3000'
+
+  // ── Developer OAuth ──────────────────────────────────────
+  if (code && state === 'developer') {
+    const { access_token } = await exchangeCodeForToken(code)
+    const ghUser = await getUser(access_token) as {
+      id: number
+      login: string
+      email: string | null
+      name: string | null
+    }
+
+    const [dev] = await sql`
+      INSERT INTO developers (github_id, username, email, first_name, last_name)
+      VALUES (
+        ${String(ghUser.id)},
+        ${ghUser.login},
+        ${ghUser.email ?? ''},
+        ${ghUser.name?.split(' ')[0] ?? ghUser.login},
+        ${ghUser.name?.split(' ').slice(1).join(' ') ?? ''}
+      )
+      ON CONFLICT (github_id) DO UPDATE SET
+        username = EXCLUDED.username
+      RETURNING id, anthropic_api_key
+    `
+
+    if (dev.anthropic_api_key) {
+      return c.redirect(`${frontendUrl}/repos`)
+    }
+
+    return c.redirect(`${frontendUrl}/developer/onboarding?id=${dev.id}`)
+  }
+
+  // ── GitHub App installation (company onboarding) ─────────
   const installationId = Number(c.req.query('installation_id'))
-  const setupAction = c.req.query('setup_action')
+  if (!installationId) return c.text('Missing installation_id or OAuth code', 400)
 
-  if (!installationId) return c.text('Missing installation_id', 400)
-
-  // Fetch installation details using the app JWT
   const appJwt = createAppJwt()
   const res = await fetch(`https://api.github.com/app/installations/${installationId}`, {
     headers: { Authorization: `Bearer ${appJwt}`, Accept: 'application/vnd.github+json' },
@@ -48,7 +138,6 @@ app.get('/auth/github/callback', async (c) => {
     account: { login: string; type: string }
   }
 
-  // Store the installation
   await sql`
     INSERT INTO github_installations (installation_id, account_login, account_type)
     VALUES (${installation.id}, ${installation.account.login}, ${installation.account.type})
@@ -56,7 +145,6 @@ app.get('/auth/github/callback', async (c) => {
       account_login = EXCLUDED.account_login
   `
 
-  const frontendUrl = process.env.FRONTEND_URL ?? 'http://localhost:3000'
   return c.redirect(`${frontendUrl}/company/connect-repo?installation_id=${installationId}`)
 })
 

@@ -37,4 +37,19 @@ export async function initDb() {
       UNIQUE(installation_id, repo_full_name, issue_number)
     )
   `
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS developers (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      first_name TEXT NOT NULL DEFAULT '',
+      last_name TEXT NOT NULL DEFAULT '',
+      username TEXT UNIQUE,
+      email TEXT UNIQUE NOT NULL,
+      password_hash TEXT,
+      github_id TEXT UNIQUE,
+      anthropic_api_key TEXT,
+      preferred_model TEXT NOT NULL DEFAULT 'claude-opus-4-6',
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `
 }
