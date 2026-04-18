@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { setCookie } from 'hono/cookie'
 import { handle } from 'hono/aws-lambda'
+import Anthropic from '@anthropic-ai/sdk'
 import { sql, initDb } from './db.js'
 import {
   createAppJwt,
@@ -432,9 +433,149 @@ app.get('/api/sessions/:id', async (c) => {
   })
 })
 
-/** Chat message history for a session (stub — returns empty for now) */
+/** Chat message history for a session */
 app.get('/api/sessions/:id/messages', async (c) => {
-  return c.json([])
+  const { id } = c.req.param()
+  const rows = await sql`
+    SELECT role, content FROM session_messages
+    WHERE session_id = ${id}
+    ORDER BY created_at ASC
+  `
+  return c.json(rows.map(r => ({ role: r.role, content: r.content })))
+})
+
+/** Send a message to Claude and persist both turns */
+app.post('/api/sessions/:id/messages', async (c) => {
+  const { id } = c.req.param()
+
+  // Guard against non-UUID values (e.g. the string "null" from the frontend)
+  if (!/^[0-9a-f-]{36}$/i.test(id)) {
+    return c.json({ error: `Invalid session ID: ${id}` }, 400)
+  }
+
+  let body: { content?: string }
+  try { body = await c.req.json() } catch { return c.json({ error: 'Invalid JSON body' }, 400) }
+  const userText = body.content?.trim() ?? ''
+  if (!userText) return c.json({ error: 'content required' }, 400)
+
+  // Load session + issue + developer
+  const [session] = await sql`
+    SELECT s.id, s.repo_full_name, s.issue_number, s.branch_name, s.default_branch, s.developer_id,
+           i.title AS issue_title, i.salary, i.labels,
+           d.anthropic_api_key, d.preferred_model
+    FROM sessions s
+    LEFT JOIN issues i ON i.repo_full_name = s.repo_full_name AND i.issue_number = s.issue_number
+    LEFT JOIN developers d ON d.id = s.developer_id
+    WHERE s.id = ${id}
+  `
+  if (!session) return c.json({ error: `Session not found: ${id}` }, 404)
+
+  // Use developer's key, fall back to env var for anonymous sessions
+  const apiKey = (session.anthropic_api_key as string | null) ?? process.env.ANTHROPIC_API_KEY ?? null
+  if (!apiKey) {
+    return c.json({ error: 'No Anthropic API key — add one in your developer profile or set ANTHROPIC_API_KEY' }, 402)
+  }
+
+  const model = (session.preferred_model as string | null) ?? 'claude-opus-4-6'
+  const repoFullName = session.repo_full_name as string
+  const branch = (session.branch_name as string | null) ?? (session.default_branch as string | null) ?? 'main'
+
+  // Fetch file contents for context (best-effort — skip on any error)
+  let fileContext = ''
+  const tryFiles = async () => {
+    const installationId = await getInstallationIdForRepo(repoFullName)
+    const entries = await getRepoTree(installationId, repoFullName, branch)
+    const blobs = (entries as Array<{ path: string; type: string; size?: number }>)
+      .filter(e => e.type === 'blob' && (e.size ?? 0) < 50_000)
+      .slice(0, 8)
+    const snippets = await Promise.all(blobs.map(async e => {
+      const { content: fc } = await getFileContent(installationId, repoFullName, e.path, branch)
+      return `### ${e.path}\n\`\`\`\n${fc.slice(0, 2000)}\n\`\`\``
+    }))
+    return snippets.join('\n\n')
+  }
+  await tryFiles().then(ctx => { fileContext = ctx }).catch(() => {})
+
+  const labelLine = (session.labels as string[] | null)?.length
+    ? `**Labels:** ${(session.labels as string[]).join(', ')}`
+    : ''
+  const systemPrompt = [
+    'You are an expert software engineer helping a developer fix a GitHub issue.',
+    '',
+    `**Repository:** ${repoFullName}`,
+    `**Issue #${session.issue_number}:** ${session.issue_title ?? 'Untitled'}`,
+    `**Bounty:** $${session.salary ?? 0}`,
+    labelLine,
+    `**Branch:** ${branch}`,
+    '',
+    'When making code changes, use the write_file tool to write the complete updated file.',
+    'Always write the ENTIRE file content — never partial snippets.',
+    'After writing files, include a brief text summary of what you changed and why.',
+    fileContext ? `\n## Current file contents\n\n${fileContext}` : '',
+  ].filter(Boolean).join('\n')
+
+  const writeFileTool: Anthropic.Tool = {
+    name: 'write_file',
+    description: 'Write or update a file in the repository with new content. Use this for ALL code changes.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        path:    { type: 'string', description: 'File path relative to repo root, e.g. src/streaming.ts' },
+        content: { type: 'string', description: 'Complete file content — always write the full file, not a diff' },
+      },
+      required: ['path', 'content'],
+    },
+  }
+
+  // Load history, persist user message
+  const history = await sql`
+    SELECT role, content FROM session_messages WHERE session_id = ${id} ORDER BY created_at ASC
+  `
+  await sql`INSERT INTO session_messages (session_id, role, content) VALUES (${id}, 'user', ${userText})`
+
+  // Call Anthropic
+  let summary = ''
+  const fileChanges: Array<{ path: string; content: string }> = []
+  try {
+    const anthropic = new Anthropic({ apiKey })
+    const response = await anthropic.messages.create({
+      model,
+      max_tokens: 4096,
+      system: systemPrompt,
+      tools: [writeFileTool],
+      messages: [
+        ...(history as Array<{ role: string; content: string }>).map(r => ({
+          role: r.role as 'user' | 'assistant',
+          content: r.content,
+        })),
+        { role: 'user', content: userText },
+      ],
+    })
+
+    for (const block of response.content) {
+      if (block.type === 'text') {
+        summary += block.text
+      } else if (block.type === 'tool_use' && block.name === 'write_file') {
+        const input = block.input as { path: string; content: string }
+        if (input.path && typeof input.content === 'string') {
+          fileChanges.push({ path: input.path, content: input.content })
+        }
+      }
+    }
+
+    // Fallback summary when Claude only used the tool and wrote no text
+    if (!summary && fileChanges.length > 0) {
+      const names = fileChanges.map(f => f.path.split('/').pop()).join(', ')
+      summary = `Updated ${fileChanges.length === 1 ? fileChanges[0].path : `${fileChanges.length} files`}: ${names}`
+    }
+  } catch (err) {
+    console.error('[messages] Anthropic error:', err)
+    const msg = err instanceof Error ? err.message : String(err)
+    return c.json({ error: `Anthropic API error: ${msg}` }, 502)
+  }
+
+  await sql`INSERT INTO session_messages (session_id, role, content) VALUES (${id}, 'assistant', ${summary})`
+  return c.json({ role: 'claude', content: summary, fileChanges })
 })
 
 // ─── Editor Git Operations ────────────────────────────────────

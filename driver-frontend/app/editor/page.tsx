@@ -29,7 +29,6 @@ type Session = {
   diff: { added: number; removed: number }
   usage: { tokens: number; cost: string }
   user: { initials: string }
-  previewUrl?: string | null
 }
 
 /* ── Helpers ─────────────────────────────────────── */
@@ -336,6 +335,7 @@ export default function Editor() {
   const [messages, setMessages] = useState<Message[]>([])
   const [chatInput, setChatInput] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [claudeTyping, setClaudeTyping] = useState(false)
   const [chatOpen, setChatOpen] = useState(true)
   const [filesOpen, setFilesOpen] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -460,10 +460,65 @@ export default function Editor() {
     return () => window.removeEventListener('keydown', handler)
   }, [saveFile])
 
-  function handleSend() {
-    if (!chatInput.trim()) return
-    setMessages(prev => [...prev, { role: 'user', content: chatInput.trim() }])
+  async function handleSend() {
+    const text = chatInput.trim()
+    if (!text || claudeTyping || !sessionId) return
     setChatInput('')
+    setMessages(prev => [...prev, { role: 'user', content: text }])
+    setClaudeTyping(true)
+    try {
+      const res = await fetch(`${API}/api/sessions/${sessionId}/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: text }),
+      })
+      if (res.ok) {
+        const data = await res.json()
+        setMessages(prev => [...prev, { role: 'claude', content: data.content }])
+        if (data.fileChanges?.length) {
+          const changes = data.fileChanges as { path: string; content: string }[]
+          let firstPath: string | null = null
+
+          for (const { path, content } of changes) {
+            fileContentsRef.current.set(path, content)
+            setDirtyFiles(prev => new Set(prev).add(path))
+
+            // Add new files to the tree if not already present
+            setFiles(prev => {
+              const exists = prev.some(n => n.path === path || (n.children ?? []).some(c => c.path === path))
+              if (exists) return prev
+              const name = path.split('/').pop() ?? path
+              const ext = extFromName(name)
+              return [...prev, { name, path, type: 'file', ext }]
+            })
+
+            if (!firstPath) firstPath = path
+          }
+
+          // Auto-open the first changed file
+          if (firstPath) {
+            const { content } = changes.find(c => c.path === firstPath)!
+            setActiveFilePath(firstPath)
+            setEditorContent(content)
+            setSaveStatus('unsaved')
+            setFiles(prev => markActive(prev, firstPath!))
+          }
+
+          const changeMsgs = changes.map(f => ({
+            role: 'system' as const,
+            content: `Edited ${f.path}`,
+          }))
+          setMessages(prev => [...prev, ...changeMsgs])
+        }
+      } else {
+        const err = await res.json().catch(() => ({ error: 'Request failed' }))
+        setMessages(prev => [...prev, { role: 'system', content: `Error: ${err.error ?? res.statusText}` }])
+      }
+    } catch {
+      setMessages(prev => [...prev, { role: 'system', content: 'Could not reach the server.' }])
+    } finally {
+      setClaudeTyping(false)
+    }
   }
 
   async function handleSubmit() {
@@ -575,7 +630,7 @@ export default function Editor() {
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-1)' }}>Claude</div>
             </div>
-            <span className="badge badge-muted" style={{ fontSize: '0.6rem', fontFamily: 'var(--font-mono)' }}>claude-3-7-sonnet</span>
+            <span className="badge badge-muted" style={{ fontSize: '0.6rem', fontFamily: 'var(--font-mono)' }}>{session?.model ?? 'claude-opus-4-6'}</span>
             <button onClick={() => setChatOpen(false)} title="Collapse chat" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', display: 'flex', alignItems: 'center', padding: '0.1rem' }}>
               <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M8 2.5L4 6.5L8 10.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
             </button>
@@ -625,6 +680,19 @@ export default function Editor() {
               </div>
             ))}
 
+            {claudeTyping && (
+              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-start' }}>
+                <div style={{ width: 22, height: 22, borderRadius: 5, background: '#CC785C18', border: '1px solid #CC785C33', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1 }}>
+                  <AnthropicMark />
+                </div>
+                <div className="chat-claude" style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.5rem 0.75rem' }}>
+                  {[0, 150, 300].map(delay => (
+                    <div key={delay} style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--text-3)', animation: 'blink 1.2s ease infinite', animationDelay: `${delay}ms` }} />
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div ref={messagesEndRef} />
           </div>
 
@@ -644,8 +712,8 @@ export default function Editor() {
               />
               <div style={{ padding: '0.375rem 0.625rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid var(--border)' }}>
                 <span style={{ fontSize: '0.67rem', color: 'var(--text-3)', fontFamily: 'var(--font-mono)' }}>Enter to send</span>
-                <button className="btn btn-blue" style={{ padding: '0.3rem 0.7rem', fontSize: '0.75rem' }} onClick={handleSend}>
-                  Send
+                <button className="btn btn-blue" style={{ padding: '0.3rem 0.7rem', fontSize: '0.75rem' }} onClick={handleSend} disabled={claudeTyping}>
+                  {claudeTyping ? '...' : 'Send'}
                   <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
                     <path d="M1.5 5.5h8M6 2l3.5 3.5L6 9" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
                   </svg>
