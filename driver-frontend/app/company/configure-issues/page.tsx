@@ -79,7 +79,7 @@ export default function ConfigureIssues() {
     if (!installationId) return
 
     Promise.all([
-      fetch(`${API}/api/issues?installation_id=${installationId}`).then((r) => r.json()),
+      fetch(`${API}/api/issues?installation_id=${installationId}`, { credentials: 'include' }).then((r) => r.json()),
       fetch(`${API}/api/installations`).then((r) => r.json()),
     ])
       .then(([issueData, installData]) => {
@@ -147,6 +147,7 @@ export default function ConfigureIssues() {
     try {
       await fetch(`${API}/api/issues/configure`, {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ installation_id: Number(installationId), issues: configuredIssues }),
       })
