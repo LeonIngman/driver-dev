@@ -61,7 +61,7 @@ async function fetchProfile(auth: Record<string, string>): Promise<Profile> {
 export default async function CompanyIssues() {
   const cookieStore = await cookies()
   const token = cookieStore.get('token')?.value
-  const auth = token ? { Authorization: `Bearer ${token}` } : {}
+  const auth: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {}
   const [{ issues, total }, stats, repos, profile] = await Promise.all([
     fetchIssues(auth),
     fetchStats(auth),

@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001'
@@ -62,7 +62,7 @@ const labelConfig: Record<string, string> = {
   'help wanted': 'badge-orange',
 }
 
-export default function ConfigureIssues() {
+function ConfigureIssuesInner() {
   const searchParams = useSearchParams()
   const installationId = searchParams.get('installation_id')
 
@@ -390,5 +390,13 @@ export default function ConfigureIssues() {
         }
       `}</style>
     </div>
+  )
+}
+
+export default function ConfigureIssues() {
+  return (
+    <Suspense>
+      <ConfigureIssuesInner />
+    </Suspense>
   )
 }

@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001'
@@ -63,7 +63,7 @@ function timeAgo(dateStr: string): string {
   return `${weeks}w ago`
 }
 
-export default function ConnectRepo() {
+function ConnectRepoInner() {
   const searchParams = useSearchParams()
   const installationId = searchParams.get('installation_id')
 
@@ -385,5 +385,13 @@ export default function ConnectRepo() {
         }
       `}</style>
     </div>
+  )
+}
+
+export default function ConnectRepo() {
+  return (
+    <Suspense>
+      <ConnectRepoInner />
+    </Suspense>
   )
 }

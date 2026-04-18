@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { cookies } from 'next/headers'
 
 const API = process.env.API_URL ?? 'http://localhost:3001'

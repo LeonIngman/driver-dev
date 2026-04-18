@@ -61,7 +61,7 @@ async function fetchProfile(authHeader: Record<string, string>): Promise<Profile
 export default async function CompanyShellLayout({ children }: { children: React.ReactNode }) {
   const cookieStore = await cookies()
   const token = cookieStore.get('token')?.value
-  const authHeader = token ? { Authorization: `Bearer ${token}` } : {}
+  const authHeader: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {}
   const [repos, profile] = await Promise.all([fetchRepos(authHeader), fetchProfile(authHeader)])
   const navItems = buildNavItems(profile.slug)
 

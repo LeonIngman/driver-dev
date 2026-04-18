@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import MonacoEditor, { loader } from '@monaco-editor/react'
 
@@ -25,6 +25,8 @@ type Session = {
   issue: { id: number; title: string; labels: string[]; bounty: string; repoName: string }
   branch: string | null
   defaultBranch: string | null
+  previewUrl?: string
+  model?: string
   status: string
   diff: { added: number; removed: number }
   usage: { tokens: number; cost: string }
@@ -326,7 +328,7 @@ function TreeNode({ node, depth = 0, onFileClick }: { node: FileNode; depth?: nu
 }
 
 /* ── Page ────────────────────────────────────────── */
-export default function Editor() {
+function EditorInner() {
   const params = useSearchParams()
   const sessionId = params.get('sessionId')
 
@@ -1099,5 +1101,13 @@ export default function Editor() {
         </div>
       )}
     </div>
+  )
+}
+
+export default function Editor() {
+  return (
+    <Suspense>
+      <EditorInner />
+    </Suspense>
   )
 }
