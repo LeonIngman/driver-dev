@@ -268,6 +268,70 @@ app.get('/api/repos', async (c) => {
   return c.json(repos)
 })
 
+/** Repo detail header */
+app.get('/api/repos/:org/:repo', async (c) => {
+  const { org, repo } = c.req.param()
+  const fullName = `${org}/${repo}`
+
+  const [inst] = await sql`
+    SELECT gi.account_login
+    FROM connected_repos cr
+    JOIN github_installations gi ON gi.installation_id = cr.installation_id
+    WHERE cr.repo_full_name = ${fullName}
+    LIMIT 1
+  `
+
+  const tagRows = await sql`
+    SELECT ARRAY_AGG(DISTINCT elem) FILTER (WHERE elem IS NOT NULL) AS tags
+    FROM issues, LATERAL UNNEST(labels) AS elem
+    WHERE repo_full_name = ${fullName}
+  `
+
+  const accountLogin = (inst?.account_login as string | null) ?? org
+  return c.json({
+    org:         accountLogin,
+    orgInitial:  accountLogin.slice(0, 2).toUpperCase(),
+    orgColor:    '#E86C2C',
+    name:        repo,
+    fullName,
+    description: '',
+    lang:        '',
+    langDot:     '',
+    stars:       0,
+    tags:        (tagRows[0]?.tags as string[] | null) ?? [],
+  })
+})
+
+/** Issues for a repo detail page */
+app.get('/api/repos/:org/:repo/issues', async (c) => {
+  const { org, repo } = c.req.param()
+  const fullName = `${org}/${repo}`
+
+  const rows = await sql`
+    SELECT issue_number, title, status, labels, salary, updated_at
+    FROM issues
+    WHERE repo_full_name = ${fullName}
+    ORDER BY
+      CASE status WHEN 'open' THEN 0 WHEN 'claimed' THEN 1 WHEN 'in_review' THEN 2 ELSE 3 END,
+      salary DESC
+  `
+
+  const issues = rows.map((r) => ({
+    id:          String(r.issue_number),
+    title:       r.title,
+    status:      r.status as 'open' | 'claimed' | 'in_review' | 'completed',
+    labels:      r.labels as string[],
+    salary:      Number(r.salary),
+    devs:        0,
+    devInitials: [] as string[],
+    devColors:   [] as string[],
+    comments:    0,
+    updated:     new Date(r.updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+  }))
+
+  return c.json(issues)
+})
+
 /** Connect (save) a repo */
 app.post('/api/repos/connect', async (c) => {
   const { installation_id, repo_id, repo_full_name, private: isPrivate } =
