@@ -15,6 +15,7 @@
     "tsx": "^4.19.2"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.56.0",
     "@hono/node-server": "^1.13.7",
     "hono": "^4.12.14",
     "jsonwebtoken": "^9.0.3",
