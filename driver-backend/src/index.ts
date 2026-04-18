@@ -1,5 +1,6 @@
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
+import { setCookie } from 'hono/cookie'
 import { handle } from 'hono/aws-lambda'
 import { sql, initDb } from './db.js'
 import {
@@ -48,6 +49,13 @@ app.get('/', async (c) => {
         email = CASE WHEN developers.email = '' THEN EXCLUDED.email ELSE developers.email END
       RETURNING id, anthropic_api_key
     `
+
+    setCookie(c, 'developer_id', String(dev.id), {
+      path: '/',
+      httpOnly: false,
+      sameSite: 'Lax',
+      maxAge: 60 * 60 * 24 * 90,
+    })
 
     if (dev.anthropic_api_key) {
       return c.redirect(`${frontendUrl}/repos`)
@@ -119,6 +127,13 @@ app.get('/auth/github/callback', async (c) => {
         email = CASE WHEN developers.email = '' THEN EXCLUDED.email ELSE developers.email END
       RETURNING id, anthropic_api_key
     `
+
+    setCookie(c, 'developer_id', String(dev.id), {
+      path: '/',
+      httpOnly: false,
+      sameSite: 'Lax',
+      maxAge: 60 * 60 * 24 * 90,
+    })
 
     if (dev.anthropic_api_key) {
       return c.redirect(`${frontendUrl}/repos`)
