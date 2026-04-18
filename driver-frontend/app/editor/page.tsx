@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { useSearchParams, useRouter } from 'next/navigation'
+import { useSearchParams } from 'next/navigation'
 import MonacoEditor from '@monaco-editor/react'
 
 const API = process.env.NEXT_PUBLIC_API_URL
@@ -17,16 +17,15 @@ type Message = {
 
 type Session = {
   issue: { id: number; title: string; labels: string[]; bounty: string; repoName: string }
-  files: FileNode[]
+  branch: string | null
+  defaultBranch: string | null
+  status: string
   diff: { added: number; removed: number }
   usage: { tokens: number; cost: string }
   user: { initials: string }
-  activeFile: { name: string; content: string }
 }
 
 /* ── Helpers ─────────────────────────────────────── */
-const IGNORED = new Set(['node_modules', '.git', '.next', 'dist', 'build', '.cache', '.DS_Store', '__pycache__', '.turbo'])
-
 function extFromName(name: string): string | undefined {
   const dot = name.lastIndexOf('.')
   return dot > 0 ? name.slice(dot + 1) : undefined
@@ -120,22 +119,9 @@ function TreeNode({ node, depth = 0, onFileClick }: { node: FileNode; depth?: nu
   )
 }
 
-function CopyButton({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false)
-  return (
-    <button
-      onClick={() => { navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 1500) }}
-      style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 4, cursor: 'pointer', color: 'var(--text-3)', padding: '0.2rem 0.4rem', fontSize: '0.65rem', fontFamily: 'var(--font-mono)', display: 'flex', alignItems: 'center', gap: '0.25rem' }}
-    >
-      {copied ? 'Copied' : 'Copy'}
-    </button>
-  )
-}
-
 /* ── Page ────────────────────────────────────────── */
 export default function Editor() {
   const params = useSearchParams()
-  const router = useRouter()
   const sessionId = params.get('sessionId')
 
   const [session, setSession] = useState<Session | null>(null)
@@ -147,232 +133,108 @@ export default function Editor() {
   const [filesOpen, setFilesOpen] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
-  // File system state
-  const [folderOpen, setFolderOpen] = useState(false)
-  const [folderName, setFolderName] = useState('')
-  const [dirHandle, setDirHandle] = useState<FileSystemDirectoryHandle | null>(null)
-  const [fileHandles, setFileHandles] = useState<Map<string, FileSystemFileHandle>>(new Map())
+  // Editor state
+  const [loading, setLoading] = useState(true)
   const fileContentsRef = useRef<Map<string, string>>(new Map())
+  const [fileShas, setFileShas] = useState<Map<string, string>>(new Map())
   const [activeFilePath, setActiveFilePath] = useState<string | null>(null)
   const [editorContent, setEditorContent] = useState('')
   const [saveStatus, setSaveStatus] = useState<'saved' | 'unsaved' | 'saving'>('saved')
-  const folderInputRef = useRef<HTMLInputElement>(null)
+  const [branchName, setBranchName] = useState<string | null>(null)
+  const [dirtyFiles, setDirtyFiles] = useState<Set<string>>(new Set())
+  const [prUrl, setPrUrl] = useState<string | null>(null)
 
-  // Ensure webkitdirectory is set on the hidden input (React may strip non-standard attrs)
-  useEffect(() => {
-    if (folderInputRef.current) {
-      folderInputRef.current.setAttribute('webkitdirectory', '')
-      folderInputRef.current.setAttribute('directory', '')
-    }
-  }, [])
-
-  // Fetch session data
+  // Fetch session data and file tree
   useEffect(() => {
     if (!sessionId) return
+
     fetch(`${API}/api/sessions/${sessionId}`)
       .then(r => r.ok ? r.json() : null)
-      .then((data: Session | null) => { if (data) setSession(data) })
+      .then((data: Session | null) => {
+        if (data) {
+          setSession(data)
+          setBranchName(data.branch ?? null)
+        }
+      })
       .catch(() => {})
 
     fetch(`${API}/api/sessions/${sessionId}/messages`)
       .then(r => r.ok ? r.json() : null)
       .then(data => data && setMessages(data))
       .catch(() => {})
+
+    fetch(`${API}/api/sessions/${sessionId}/tree`)
+      .then(async r => {
+        if (!r.ok) {
+          const body = await r.text()
+          console.error('Tree fetch failed:', r.status, body)
+          return null
+        }
+        return r.json()
+      })
+      .then(data => {
+        if (data) {
+          setFiles(data.files)
+          setBranchName(data.branch)
+          setFilesOpen(true)
+        }
+        setLoading(false)
+      })
+      .catch(err => { console.error('Tree fetch error:', err); setLoading(false) })
   }, [sessionId])
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
-  // ── File System Access API ────────────────────
-  async function readDirTree(
-    handle: FileSystemDirectoryHandle,
-    prefix = '',
-    handles: Map<string, FileSystemFileHandle> = new Map()
-  ): Promise<{ nodes: FileNode[]; handles: Map<string, FileSystemFileHandle> }> {
-    const folders: FileNode[] = []
-    const fileNodes: FileNode[] = []
-
-    // @ts-expect-error — File System Access API types not in default lib
-    for await (const entry of handle.values() as AsyncIterable<FileSystemHandle & { kind: 'file' | 'directory'; name: string }>) {
-      if (IGNORED.has(entry.name)) continue
-      const path = prefix ? `${prefix}/${entry.name}` : entry.name
-
-      if (entry.kind === 'directory') {
-        const sub = await readDirTree(entry as FileSystemDirectoryHandle, path, handles)
-        folders.push({
-          name: entry.name, path, type: 'folder',
-          ext: undefined,
-          children: sub.nodes,
-        })
-      } else {
-        handles.set(path, entry as FileSystemFileHandle)
-        fileNodes.push({
-          name: entry.name, path, type: 'file',
-          ext: extFromName(entry.name),
-        })
-      }
-    }
-
-    // Sort: folders first (alphabetical), then files (alphabetical)
-    folders.sort((a, b) => a.name.localeCompare(b.name))
-    fileNodes.sort((a, b) => a.name.localeCompare(b.name))
-
-    return { nodes: [...folders, ...fileNodes], handles }
-  }
-
-  async function openFolder() {
-    // @ts-expect-error — File System Access API not in default TS lib
-    const hasNativeAPI = typeof window.showDirectoryPicker === 'function'
-
-    if (hasNativeAPI) {
-      try {
-        // @ts-expect-error — File System Access API not in default TS lib
-        const dirH = await window.showDirectoryPicker({ mode: 'readwrite' }) as FileSystemDirectoryHandle
-        setDirHandle(dirH)
-        setFolderName(dirH.name)
-        const { nodes, handles } = await readDirTree(dirH)
-        setFiles(nodes)
-        setFileHandles(handles)
-        setFolderOpen(true)
-        setFilesOpen(true)
-        return
-      } catch (err) {
-        if (err instanceof DOMException && err.name === 'AbortError') return
-        // Native API failed (e.g. Brave blocks it) — fall through to input fallback
-        console.warn('Native folder picker failed, using fallback:', err)
-      }
-    }
-
-    // Fallback: trigger <input webkitdirectory>
-    folderInputRef.current?.click()
-  }
-
-  function handleFolderInput(e: React.ChangeEvent<HTMLInputElement>) {
-    const inputFiles = e.target.files
-    if (!inputFiles || inputFiles.length === 0) return
-
-    const contents = new Map<string, string>()
-    const nodeMap = new Map<string, FileNode>()
-    const roots: FileNode[] = []
-
-    // Determine the common root folder name
-    const firstPath = inputFiles[0].webkitRelativePath
-    const rootName = firstPath.split('/')[0] ?? 'folder'
-    setFolderName(rootName)
-
-    let pending = inputFiles.length
-
-    Array.from(inputFiles).forEach(file => {
-      // webkitRelativePath = "rootFolder/sub/file.ts"
-      const relPath = file.webkitRelativePath
-      // Strip the root folder prefix so paths are relative
-      const path = relPath.split('/').slice(1).join('/')
-      if (!path) { pending--; checkDone(); return }
-
-      // Skip ignored directories
-      const parts = path.split('/')
-      if (parts.some(p => IGNORED.has(p))) { pending--; checkDone(); return }
-
-      const reader = new FileReader()
-      reader.onload = () => {
-        contents.set(path, reader.result as string)
-        pending--
-        checkDone()
-      }
-      reader.onerror = () => { pending--; checkDone() }
-      reader.readAsText(file)
-
-      // Build tree nodes
-      for (let i = 0; i < parts.length; i++) {
-        const current = parts.slice(0, i + 1).join('/')
-        if (nodeMap.has(current)) continue
-        const isFile = i === parts.length - 1
-        const node: FileNode = {
-          name: parts[i],
-          path: current,
-          type: isFile ? 'file' : 'folder',
-          ext: isFile ? extFromName(parts[i]) : undefined,
-          children: isFile ? undefined : [],
-        }
-        nodeMap.set(current, node)
-
-        if (i === 0) {
-          roots.push(node)
-        } else {
-          const parentPath = parts.slice(0, i).join('/')
-          nodeMap.get(parentPath)?.children?.push(node)
-        }
-      }
-    })
-
-    function sortNodes(nodes: FileNode[]) {
-      nodes.sort((a, b) => {
-        if (a.type !== b.type) return a.type === 'folder' ? -1 : 1
-        return a.name.localeCompare(b.name)
-      })
-      nodes.forEach(n => { if (n.children) sortNodes(n.children) })
-    }
-
-    function checkDone() {
-      if (pending > 0) return
-      sortNodes(roots)
-      fileContentsRef.current = contents
-      setFiles(roots)
-      setFolderOpen(true)
-      setFilesOpen(true)
-    }
-
-    // Reset input so re-selecting the same folder works
-    e.target.value = ''
-  }
-
+  // ── GitHub-backed file operations ────────────────────
   async function openFile(path: string) {
-    // Try native handle first, then fall back to in-memory contents
-    const handle = fileHandles.get(path)
-    if (handle) {
-      const file = await handle.getFile()
-      const text = await file.text()
-      setEditorContent(text)
-    } else {
-      const text = fileContentsRef.current.get(path)
-      if (text === undefined) return
-      setEditorContent(text)
+    // Check in-memory cache first
+    const cached = fileContentsRef.current.get(path)
+    if (cached !== undefined) {
+      setEditorContent(cached)
+      setActiveFilePath(path)
+      setSaveStatus(dirtyFiles.has(path) ? 'unsaved' : 'saved')
+      setFiles(prev => markActive(prev, path))
+      return
     }
+
+    // Fetch from GitHub via backend
+    const res = await fetch(`${API}/api/sessions/${sessionId}/file?path=${encodeURIComponent(path)}`)
+    if (!res.ok) return
+    const data = await res.json()
+
+    fileContentsRef.current.set(path, data.content)
+    setFileShas(prev => new Map(prev).set(path, data.sha))
+    setEditorContent(data.content)
     setActiveFilePath(path)
     setSaveStatus('saved')
     setFiles(prev => markActive(prev, path))
   }
 
   const saveFile = useCallback(async () => {
-    if (!activeFilePath) return
+    if (!activeFilePath || !sessionId) return
     setSaveStatus('saving')
 
-    // Try native write first
-    const handle = fileHandles.get(activeFilePath)
-    if (handle) {
-      try {
-        const writable = await handle.createWritable()
-        await writable.write(editorContent)
-        await writable.close()
-        setSaveStatus('saved')
-        return
-      } catch {
-        // Fall through to download
-      }
+    const sha = fileShas.get(activeFilePath)
+    const res = await fetch(`${API}/api/sessions/${sessionId}/save`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: activeFilePath, content: editorContent, sha }),
+    })
+
+    if (!res.ok) {
+      setSaveStatus('unsaved')
+      return
     }
 
-    // Fallback: update in-memory contents + trigger download
+    const data = await res.json()
+    setFileShas(prev => new Map(prev).set(activeFilePath, data.sha))
     fileContentsRef.current.set(activeFilePath, editorContent)
-    const blob = new Blob([editorContent], { type: 'text/plain' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = activeFilePath.split('/').pop() ?? 'file'
-    a.click()
-    URL.revokeObjectURL(url)
+    if (data.branch) setBranchName(data.branch)
+    setDirtyFiles(prev => { const next = new Set(prev); next.delete(activeFilePath); return next })
     setSaveStatus('saved')
-  }, [activeFilePath, fileHandles, editorContent])
+  }, [activeFilePath, sessionId, editorContent, fileShas])
 
   // Cmd+S / Ctrl+S keyboard shortcut
   useEffect(() => {
@@ -394,33 +256,36 @@ export default function Editor() {
 
   async function handleSubmit() {
     if (!sessionId) return
+    if (dirtyFiles.size > 0) {
+      alert('Please save all files before submitting.')
+      return
+    }
+    if (!branchName) {
+      alert('No changes have been saved yet.')
+      return
+    }
     setSubmitting(true)
     try {
       const res = await fetch(`${API}/api/sessions/${sessionId}/submit`, { method: 'POST' })
-      if (res.ok) router.push('/repos/detail')
+      if (res.ok) {
+        const data = await res.json()
+        setPrUrl(data.pr_url)
+      }
     } finally {
       setSubmitting(false)
     }
   }
 
   const issue = session?.issue
-  const diff = session?.diff
   const usage = session?.usage
   const userInitials = session?.user?.initials ?? '?'
   const activeFileName = activeFilePath?.split('/').pop() ?? 'No file open'
   const activeExt = activeFilePath ? extFromName(activeFilePath) : undefined
-
-  // Derive repo clone URL from session
   const repoName = issue?.repoName ?? ''
-  const cloneUrl = repoName ? `https://github.com/${repoName}.git` : ''
-  const branchName = issue ? `fix/issue-${issue.id}` : 'fix/issue'
+  const treeLoaded = files.length > 0
 
   return (
     <div style={{ display: 'flex', height: '100vh', flexDirection: 'column', background: 'var(--bg-0)', overflow: 'hidden' }}>
-
-      {/* Hidden input for folder fallback (Firefox, Safari, Brave) */}
-      {/* @ts-expect-error — webkitdirectory is non-standard but widely supported */}
-      <input ref={folderInputRef} type="file" webkitdirectory="" style={{ display: 'none' }} onChange={handleFolderInput} />
 
       {/* Global top bar */}
       <div style={{
@@ -441,11 +306,19 @@ export default function Editor() {
         </div>
 
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
-          {folderOpen && (
+          {treeLoaded && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', background: 'var(--green-bg)', border: '1px solid rgba(52,211,153,0.25)', borderRadius: 5, padding: '0.25rem 0.625rem' }}>
               <span className="live-dot" />
-              <span style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--green)' }}>Workspace open</span>
+              <span style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--green)' }}>
+                {branchName ?? session?.defaultBranch ?? 'main'}
+              </span>
             </div>
+          )}
+
+          {prUrl && (
+            <a href={prUrl} target="_blank" rel="noopener noreferrer" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', background: 'var(--green-bg)', border: '1px solid rgba(52,211,153,0.25)', borderRadius: 5, padding: '0.25rem 0.625rem', textDecoration: 'none' }}>
+              <span style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--green)' }}>PR Created</span>
+            </a>
           )}
 
           <button className="btn btn-orange" style={{ padding: '0.4rem 0.875rem', fontSize: '0.78rem' }} onClick={handleSubmit} disabled={submitting}>
@@ -604,21 +477,23 @@ export default function Editor() {
           </div>
 
           <div style={{ flex: 1, overflowY: 'auto', padding: '0.375rem' }}>
-            {files.length === 0 && !folderOpen && (
+            {loading && (
               <div style={{ padding: '1rem 0.5rem', textAlign: 'center' }}>
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-3)', marginBottom: '0.5rem' }}>No folder open</div>
-                <button className="btn btn-blue" style={{ fontSize: '0.72rem', padding: '0.3rem 0.6rem' }} onClick={openFolder}>
-                  Open Folder
-                </button>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-3)' }}>Loading files...</div>
+              </div>
+            )}
+            {!loading && files.length === 0 && (
+              <div style={{ padding: '1rem 0.5rem', textAlign: 'center' }}>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-3)' }}>No files found</div>
               </div>
             )}
             {files.map(node => <TreeNode key={node.path} node={node} onFileClick={openFile} />)}
           </div>
 
-          {folderOpen && (
+          {repoName && (
             <div style={{ padding: '0.5rem 0.75rem', borderTop: '1px solid var(--border)', background: 'var(--bg-0)' }}>
               <div style={{ fontSize: '0.68rem', color: 'var(--text-3)', fontFamily: 'var(--font-mono)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {folderName}
+                {repoName}
               </div>
             </div>
           )}
@@ -628,8 +503,8 @@ export default function Editor() {
         {/* ── PANEL 3: Editor ──────────────────────────── */}
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: 'var(--bg-0)' }}>
 
-          {/* Toolbar — only show when a folder is open */}
-          {folderOpen && (
+          {/* Toolbar — only show when tree is loaded */}
+          {treeLoaded && (
             <div style={{
               height: 38, minHeight: 38,
               background: 'var(--bg-1)', borderBottom: '1px solid var(--border)',
@@ -664,77 +539,35 @@ export default function Editor() {
             </div>
           )}
 
-          {/* Onboarding: workspace setup — shown when no folder open */}
-          {!folderOpen && (
+          {/* Loading state */}
+          {loading && !treeLoaded && (
             <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-1)' }}>
-              <div style={{ maxWidth: 480, width: '100%', padding: '2rem' }}>
-                <div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-1)', marginBottom: '0.25rem', fontFamily: 'var(--font-display)' }}>
-                  Set up your workspace
-                </div>
-                <div style={{ fontSize: '0.8rem', color: 'var(--text-3)', marginBottom: '1.5rem' }}>
-                  Clone the repository and open the folder to start working on this issue.
-                </div>
-
-                {/* Step 1 */}
-                <div style={{ marginBottom: '1.25rem' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
-                    <div style={{ width: 20, height: 20, borderRadius: '50%', background: 'var(--blue)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      <span style={{ fontSize: '0.65rem', fontWeight: 700, color: '#fff' }}>1</span>
-                    </div>
-                    <span style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-1)' }}>Clone the repository</span>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'var(--bg-0)', border: '1px solid var(--border)', borderRadius: 6, padding: '0.5rem 0.75rem' }}>
-                    <code style={{ flex: 1, fontFamily: 'var(--font-mono)', fontSize: '0.78rem', color: 'var(--text-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      git clone {cloneUrl || 'https://github.com/org/repo.git'}
-                    </code>
-                    <CopyButton text={`git clone ${cloneUrl || 'https://github.com/org/repo.git'}`} />
-                  </div>
-                </div>
-
-                {/* Step 2 */}
-                <div style={{ marginBottom: '1.5rem' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
-                    <div style={{ width: 20, height: 20, borderRadius: '50%', background: 'var(--blue)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      <span style={{ fontSize: '0.65rem', fontWeight: 700, color: '#fff' }}>2</span>
-                    </div>
-                    <span style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-1)' }}>Create your fix branch</span>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'var(--bg-0)', border: '1px solid var(--border)', borderRadius: 6, padding: '0.5rem 0.75rem' }}>
-                    <code style={{ flex: 1, fontFamily: 'var(--font-mono)', fontSize: '0.78rem', color: 'var(--text-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      git checkout -b {branchName}
-                    </code>
-                    <CopyButton text={`git checkout -b ${branchName}`} />
-                  </div>
-                </div>
-
-                {/* Step 3: Open folder */}
-                <div style={{ marginBottom: '1rem' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
-                    <div style={{ width: 20, height: 20, borderRadius: '50%', background: 'var(--blue)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      <span style={{ fontSize: '0.65rem', fontWeight: 700, color: '#fff' }}>3</span>
-                    </div>
-                    <span style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-1)' }}>Open your local copy</span>
-                  </div>
-                </div>
-
-                <button className="btn btn-orange" style={{ width: '100%', padding: '0.625rem 1rem', fontSize: '0.85rem', justifyContent: 'center' }} onClick={openFolder}>
-                  <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
-                    <path d="M1.5 5a1.5 1.5 0 011.5-1.5h3.5l1.5 1.5H12a1.5 1.5 0 011.5 1.5v5a1.5 1.5 0 01-1.5 1.5H3A1.5 1.5 0 011.5 11.5V5z" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
-                  </svg>
-                  Open Local Folder
-                </button>
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-2)', marginBottom: '0.375rem' }}>Loading repository...</div>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-3)' }}>Fetching files from GitHub</div>
               </div>
             </div>
           )}
 
-          {/* Monaco editor — shown when folder is open */}
-          {folderOpen && activeFilePath && (
+          {/* Monaco editor — shown when a file is selected */}
+          {treeLoaded && activeFilePath && (
             <div style={{ flex: 1, overflow: 'hidden' }}>
               <MonacoEditor
                 value={editorContent}
                 language={langFromPath(activeFilePath)}
                 theme="light"
-                onChange={val => { setEditorContent(val ?? ''); setSaveStatus('unsaved') }}
+                onChange={val => {
+                  const newVal = val ?? ''
+                  setEditorContent(newVal)
+                  const original = fileContentsRef.current.get(activeFilePath)
+                  if (newVal !== original) {
+                    setSaveStatus('unsaved')
+                    setDirtyFiles(prev => new Set(prev).add(activeFilePath))
+                  } else {
+                    setSaveStatus('saved')
+                    setDirtyFiles(prev => { const next = new Set(prev); next.delete(activeFilePath); return next })
+                  }
+                }}
                 options={{
                   fontSize: 13,
                   minimap: { enabled: false },
@@ -750,8 +583,8 @@ export default function Editor() {
             </div>
           )}
 
-          {/* Empty state when folder open but no file selected */}
-          {folderOpen && !activeFilePath && (
+          {/* Empty state when tree loaded but no file selected */}
+          {treeLoaded && !activeFilePath && (
             <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-0)' }}>
               <div style={{ textAlign: 'center' }}>
                 <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-2)', marginBottom: '0.375rem' }}>Select a file to edit</div>

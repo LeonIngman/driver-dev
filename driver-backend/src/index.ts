@@ -10,6 +10,13 @@ import {
   getUserPrimaryEmail,
   getInstallationRepos,
   getRepoIssues,
+  getRepoDefaultBranch,
+  getRepoTree,
+  getFileContent,
+  getBranchSha,
+  createBranch,
+  commitFile,
+  createPullRequest,
 } from './github.js'
 import developers from './developers.js'
 import companies from './companies.js'
@@ -381,6 +388,7 @@ app.get('/api/sessions/:id', async (c) => {
 
   const [session] = await sql`
     SELECT s.id, s.repo_full_name, s.issue_number, s.developer_id,
+           s.branch_name, s.default_branch, s.status,
            i.title, i.salary, i.labels
     FROM sessions s
     LEFT JOIN issues i
@@ -390,8 +398,6 @@ app.get('/api/sessions/:id', async (c) => {
   `
 
   if (!session) return c.json({ error: 'Session not found' }, 404)
-
-  const repoName = (session.repo_full_name as string).split('/')[1] ?? session.repo_full_name
 
   let userInitials = '?'
   if (session.developer_id) {
@@ -411,19 +417,195 @@ app.get('/api/sessions/:id', async (c) => {
       title:    session.title ?? 'Untitled issue',
       labels:   (session.labels as string[]) ?? [],
       bounty:   `$${session.salary ?? 0}`,
-      repoName,
+      repoName: session.repo_full_name,
     },
-    files:      [],
-    diff:       { added: 0, removed: 0 },
-    usage:      { tokens: 0, cost: '—' },
-    user:       { initials: userInitials },
-    activeFile: { name: 'index.ts', content: '' },
+    branch:        session.branch_name ?? null,
+    defaultBranch: session.default_branch ?? null,
+    status:        session.status,
+    diff:          { added: 0, removed: 0 },
+    usage:         { tokens: 0, cost: '—' },
+    user:          { initials: userInitials },
   })
 })
 
 /** Chat message history for a session (stub — returns empty for now) */
 app.get('/api/sessions/:id/messages', async (c) => {
   return c.json([])
+})
+
+// ─── Editor Git Operations ────────────────────────────────────
+
+const IGNORED_DIRS = new Set(['node_modules', '.git', '.next', 'dist', 'build', '.cache', '__pycache__', '.turbo'])
+
+/** Resolve installation_id from repo_full_name */
+async function getInstallationIdForRepo(repoFullName: string): Promise<number> {
+  const [row] = await sql`
+    SELECT installation_id FROM connected_repos WHERE repo_full_name = ${repoFullName} LIMIT 1
+  `
+  if (!row) throw new Error(`No installation found for repo ${repoFullName}`)
+  return row.installation_id as number
+}
+
+type FileNode = { name: string; path: string; type: 'file' | 'folder'; children?: FileNode[]; ext?: string }
+
+/** Transform GitHub's flat tree into nested FileNode[] */
+function buildFileTree(entries: Array<{ path: string; type: 'blob' | 'tree'; sha: string; size?: number }>): FileNode[] {
+  const root: FileNode[] = []
+  const dirs = new Map<string, FileNode>()
+
+  // Filter out ignored directories and large files (>1MB)
+  const filtered = entries.filter(e => {
+    const parts = e.path.split('/')
+    return !parts.some(p => IGNORED_DIRS.has(p)) && (e.type === 'tree' || (e.size ?? 0) < 1_000_000)
+  })
+
+  // Sort: folders first, then alphabetical
+  filtered.sort((a, b) => {
+    if (a.type !== b.type) return a.type === 'tree' ? -1 : 1
+    return a.path.localeCompare(b.path)
+  })
+
+  for (const entry of filtered) {
+    const parts = entry.path.split('/')
+    const name = parts[parts.length - 1]
+    const parentPath = parts.slice(0, -1).join('/')
+
+    const node: FileNode = {
+      name,
+      path: entry.path,
+      type: entry.type === 'tree' ? 'folder' : 'file',
+    }
+    if (node.type === 'file') {
+      const dot = name.lastIndexOf('.')
+      if (dot > 0) node.ext = name.slice(dot + 1)
+    }
+    if (node.type === 'folder') {
+      node.children = []
+      dirs.set(entry.path, node)
+    }
+
+    const parent = parentPath ? dirs.get(parentPath) : null
+    if (parent) {
+      parent.children!.push(node)
+    } else if (!parentPath) {
+      root.push(node)
+    }
+  }
+
+  return root
+}
+
+/** Fetch the repo file tree for a session */
+app.get('/api/sessions/:id/tree', async (c) => {
+  try {
+    const { id } = c.req.param()
+    const [session] = await sql`SELECT repo_full_name, branch_name, default_branch FROM sessions WHERE id = ${id}`
+    if (!session) return c.json({ error: 'Session not found' }, 404)
+
+    const repoFullName = session.repo_full_name as string
+    const installationId = await getInstallationIdForRepo(repoFullName)
+
+    // Fetch & cache default branch if not set
+    let defaultBranch = session.default_branch as string | null
+    if (!defaultBranch) {
+      defaultBranch = await getRepoDefaultBranch(installationId, repoFullName)
+      await sql`UPDATE sessions SET default_branch = ${defaultBranch} WHERE id = ${id}`
+    }
+
+    const branch = (session.branch_name as string | null) ?? defaultBranch
+    const entries = await getRepoTree(installationId, repoFullName, branch)
+    const files = buildFileTree(entries)
+
+    return c.json({ files, branch, defaultBranch })
+  } catch (err) {
+    console.error('Tree endpoint error:', err)
+    return c.json({ error: String(err) }, 500)
+  }
+})
+
+/** Fetch a single file's content */
+app.get('/api/sessions/:id/file', async (c) => {
+  try {
+    const { id } = c.req.param()
+    const path = c.req.query('path')
+    if (!path) return c.json({ error: 'path query param required' }, 400)
+
+    const [session] = await sql`SELECT repo_full_name, branch_name, default_branch FROM sessions WHERE id = ${id}`
+    if (!session) return c.json({ error: 'Session not found' }, 404)
+
+    const repoFullName = session.repo_full_name as string
+    const installationId = await getInstallationIdForRepo(repoFullName)
+    const branch = (session.branch_name as string | null) ?? (session.default_branch as string) ?? 'main'
+
+    const { content, sha } = await getFileContent(installationId, repoFullName, path, branch)
+    return c.json({ content, sha, path })
+  } catch (err) {
+    console.error('File endpoint error:', err)
+    return c.json({ error: String(err) }, 500)
+  }
+})
+
+/** Save (commit) a file — auto-creates branch on first save */
+app.post('/api/sessions/:id/save', async (c) => {
+  try {
+    const { id } = c.req.param()
+    const { path, content, sha } = await c.req.json<{ path: string; content: string; sha?: string }>()
+
+    const [session] = await sql`
+      SELECT repo_full_name, issue_number, branch_name, default_branch FROM sessions WHERE id = ${id}
+    `
+    if (!session) return c.json({ error: 'Session not found' }, 404)
+
+    const repoFullName = session.repo_full_name as string
+    const installationId = await getInstallationIdForRepo(repoFullName)
+    let branchName = session.branch_name as string | null
+    const defaultBranch = (session.default_branch as string) ?? 'main'
+
+    // Create branch on first save
+    if (!branchName) {
+      const baseSha = await getBranchSha(installationId, repoFullName, defaultBranch)
+      branchName = `fix/issue-${session.issue_number}-${(id as string).slice(0, 8)}`
+      await createBranch(installationId, repoFullName, branchName, baseSha)
+      await sql`UPDATE sessions SET branch_name = ${branchName}, default_branch = ${defaultBranch} WHERE id = ${id}`
+    }
+
+    const result = await commitFile(installationId, repoFullName, path, content, sha, branchName, `Update ${path}`)
+    return c.json({ sha: result.sha, branch: branchName })
+  } catch (err) {
+    console.error('Save endpoint error:', err)
+    return c.json({ error: String(err) }, 500)
+  }
+})
+
+/** Submit session — create a PR */
+app.post('/api/sessions/:id/submit', async (c) => {
+  const { id } = c.req.param()
+
+  const [session] = await sql`
+    SELECT s.repo_full_name, s.issue_number, s.branch_name, s.default_branch, s.status,
+           i.title
+    FROM sessions s
+    LEFT JOIN issues i ON i.repo_full_name = s.repo_full_name AND i.issue_number = s.issue_number
+    WHERE s.id = ${id}
+  `
+  if (!session) return c.json({ error: 'Session not found' }, 404)
+  if (!session.branch_name) return c.json({ error: 'No changes have been saved yet' }, 400)
+
+  const repoFullName = session.repo_full_name as string
+  const installationId = await getInstallationIdForRepo(repoFullName)
+  const issueTitle = (session.title as string) ?? 'Untitled issue'
+
+  const pr = await createPullRequest(
+    installationId, repoFullName,
+    session.branch_name as string,
+    (session.default_branch as string) ?? 'main',
+    `Fix #${session.issue_number}: ${issueTitle}`,
+    `Fixes #${session.issue_number}\n\nThis PR was created via the Driver editor.`,
+  )
+
+  await sql`UPDATE sessions SET status = 'submitted' WHERE id = ${id}`
+
+  return c.json({ pr_url: pr.html_url, pr_number: pr.number })
 })
 
 /** Connect (save) a repo */

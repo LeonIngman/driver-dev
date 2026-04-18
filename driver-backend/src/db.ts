@@ -90,7 +90,13 @@ export async function initDb() {
       issue_number INTEGER NOT NULL,
       developer_id UUID REFERENCES developers(id),
       status TEXT NOT NULL DEFAULT 'active',
+      branch_name TEXT,
+      default_branch TEXT,
       created_at TIMESTAMPTZ DEFAULT NOW()
     )
   `
+
+  // Add columns if they don't exist (for existing databases)
+  await sql`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS branch_name TEXT`
+  await sql`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS default_branch TEXT`
 }
