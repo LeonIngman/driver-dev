@@ -543,26 +543,26 @@ app.get('/api/company/profile/:slug', async (c) => {
     .slice(0, 2) || '?'
 
   const repos = await sql`
-    SELECT cr.repo_full_name, COUNT(ci.id) AS issue_count
+    SELECT cr.repo_full_name, COUNT(i.id) AS issue_count
     FROM connected_repos cr
     JOIN github_installations gi ON gi.installation_id = cr.installation_id
-    LEFT JOIN configured_issues ci ON ci.repo_full_name = cr.repo_full_name AND ci.installation_id = cr.installation_id
+    LEFT JOIN issues i ON i.repo_full_name = cr.repo_full_name AND i.installation_id = cr.installation_id
     WHERE gi.company_id = ${company.id}
     GROUP BY cr.repo_full_name
   `
 
   const [stats] = await sql`
     SELECT
-      COUNT(ci.id) AS total_issues,
-      COUNT(ci.id) FILTER (WHERE NOT EXISTS (
-        SELECT 1 FROM developer_issues di WHERE di.configured_issue_id = ci.id AND di.status = 'completed'
+      COUNT(i.id) AS total_issues,
+      COUNT(i.id) FILTER (WHERE NOT EXISTS (
+        SELECT 1 FROM developer_issues di WHERE di.issue_id = i.id AND di.status = 'completed'
       )) AS open_issues,
       COUNT(DISTINCT di.developer_id) AS active_devs,
-      COALESCE(SUM(ci.salary) FILTER (WHERE di.status = 'completed'), 0) AS total_paid
-    FROM configured_issues ci
-    JOIN connected_repos cr ON cr.repo_full_name = ci.repo_full_name AND cr.installation_id = ci.installation_id
+      COALESCE(SUM(i.salary) FILTER (WHERE di.status = 'completed'), 0) AS total_paid
+    FROM issues i
+    JOIN connected_repos cr ON cr.repo_full_name = i.repo_full_name AND cr.installation_id = i.installation_id
     JOIN github_installations gi ON gi.installation_id = cr.installation_id
-    LEFT JOIN developer_issues di ON di.configured_issue_id = ci.id
+    LEFT JOIN developer_issues di ON di.issue_id = i.id
     WHERE gi.company_id = ${company.id}
   `
 
@@ -573,12 +573,12 @@ app.get('/api/company/profile/:slug', async (c) => {
 
   // Recent issue activity
   const recentActivity = await sql`
-    SELECT di.status, ci.title, ci.repo_full_name AS repo, ci.salary,
+    SELECT di.status, i.title, i.repo_full_name AS repo, i.salary,
            COALESCE(di.completed_at, di.submitted_at, di.claimed_at) AS date,
            d.username AS developer_username
     FROM developer_issues di
-    JOIN configured_issues ci ON ci.id = di.configured_issue_id
-    JOIN connected_repos cr ON cr.repo_full_name = ci.repo_full_name AND cr.installation_id = ci.installation_id
+    JOIN issues i ON i.id = di.issue_id
+    JOIN connected_repos cr ON cr.repo_full_name = i.repo_full_name AND cr.installation_id = i.installation_id
     JOIN github_installations gi ON gi.installation_id = cr.installation_id
     JOIN developers d ON d.id = di.developer_id
     WHERE gi.company_id = ${company.id}
@@ -650,20 +650,20 @@ app.get('/api/developer/profile', async (c) => {
   const [stats] = await sql`
     SELECT
       COUNT(*) FILTER (WHERE di.status = 'completed') AS issues_completed,
-      COALESCE(SUM(ci.salary) FILTER (WHERE di.status = 'completed'), 0) AS total_earned,
-      COUNT(DISTINCT ci.repo_full_name) AS repos_contributed,
+      COALESCE(SUM(i.salary) FILTER (WHERE di.status = 'completed'), 0) AS total_earned,
+      COUNT(DISTINCT i.repo_full_name) AS repos_contributed,
       0 AS active_streak
     FROM developer_issues di
-    JOIN configured_issues ci ON ci.id = di.configured_issue_id
+    JOIN issues i ON i.id = di.issue_id
     WHERE di.developer_id = ${dev.id}
   `
 
   const activity = await sql`
-    SELECT di.status AS type, ci.title AS issue_title, ci.repo_full_name AS repo,
+    SELECT di.status AS type, i.title AS issue_title, i.repo_full_name AS repo,
            COALESCE(di.completed_at, di.submitted_at, di.claimed_at) AS date,
-           ci.salary
+           i.salary
     FROM developer_issues di
-    JOIN configured_issues ci ON ci.id = di.configured_issue_id
+    JOIN issues i ON i.id = di.issue_id
     WHERE di.developer_id = ${dev.id}
     ORDER BY COALESCE(di.completed_at, di.submitted_at, di.claimed_at) DESC
     LIMIT 10
@@ -707,19 +707,19 @@ app.get('/api/developer/profile/:username', async (c) => {
   const [stats] = await sql`
     SELECT
       COUNT(*) FILTER (WHERE di.status = 'completed') AS issues_completed,
-      COALESCE(SUM(ci.salary) FILTER (WHERE di.status = 'completed'), 0) AS total_earned,
-      COUNT(DISTINCT ci.repo_full_name) AS repos_contributed
+      COALESCE(SUM(i.salary) FILTER (WHERE di.status = 'completed'), 0) AS total_earned,
+      COUNT(DISTINCT i.repo_full_name) AS repos_contributed
     FROM developer_issues di
-    JOIN configured_issues ci ON ci.id = di.configured_issue_id
+    JOIN issues i ON i.id = di.issue_id
     WHERE di.developer_id = ${dev.id}
   `
 
   const activity = await sql`
-    SELECT di.status AS type, ci.title AS issue_title, ci.repo_full_name AS repo,
+    SELECT di.status AS type, i.title AS issue_title, i.repo_full_name AS repo,
            COALESCE(di.completed_at, di.submitted_at, di.claimed_at) AS date,
-           ci.salary
+           i.salary
     FROM developer_issues di
-    JOIN configured_issues ci ON ci.id = di.configured_issue_id
+    JOIN issues i ON i.id = di.issue_id
     WHERE di.developer_id = ${dev.id}
     ORDER BY COALESCE(di.completed_at, di.submitted_at, di.claimed_at) DESC
     LIMIT 5
@@ -752,9 +752,9 @@ app.get('/api/developer/issues', async (c) => {
 
   const rows = await sql`
     SELECT di.id, di.status, di.claimed_at, di.submitted_at, di.completed_at,
-           ci.issue_number, ci.title, ci.repo_full_name, ci.salary, ci.labels
+           i.issue_number, i.title, i.repo_full_name, i.salary, i.labels
     FROM developer_issues di
-    JOIN configured_issues ci ON ci.id = di.configured_issue_id
+    JOIN issues i ON i.id = di.issue_id
     ${devId ? sql`WHERE di.developer_id = ${devId}` : sql``}
     ORDER BY di.claimed_at DESC
   `
@@ -784,10 +784,10 @@ app.get('/api/developer/issues/stats', async (c) => {
     SELECT
       COUNT(*) FILTER (WHERE di.status = 'claimed') AS claimed_count,
       COUNT(*) FILTER (WHERE di.status IN ('claimed','submitted')) AS open_count,
-      COALESCE(SUM(ci.salary) FILTER (WHERE di.status IN ('claimed','submitted')), 0) AS total_value,
-      COALESCE(SUM(ci.salary) FILTER (WHERE di.status = 'completed'), 0) AS earned_total
+      COALESCE(SUM(i.salary) FILTER (WHERE di.status IN ('claimed','submitted')), 0) AS total_value,
+      COALESCE(SUM(i.salary) FILTER (WHERE di.status = 'completed'), 0) AS earned_total
     FROM developer_issues di
-    JOIN configured_issues ci ON ci.id = di.configured_issue_id
+    JOIN issues i ON i.id = di.issue_id
     ${devId ? sql`WHERE di.developer_id = ${devId}` : sql``}
   `
 
@@ -801,15 +801,15 @@ app.get('/api/developer/issues/stats', async (c) => {
 
 /** Claim an issue */
 app.post('/api/developer/issues/claim', async (c) => {
-  const { developer_id, configured_issue_id } = await c.req.json<{
+  const { developer_id, issue_id } = await c.req.json<{
     developer_id: string
-    configured_issue_id: number
+    issue_id: number
   }>()
 
   const [row] = await sql`
-    INSERT INTO developer_issues (developer_id, configured_issue_id, status)
-    VALUES (${developer_id}, ${configured_issue_id}, 'claimed')
-    ON CONFLICT (developer_id, configured_issue_id) DO NOTHING
+    INSERT INTO developer_issues (developer_id, issue_id, status)
+    VALUES (${developer_id}, ${issue_id}, 'claimed')
+    ON CONFLICT (developer_id, issue_id) DO NOTHING
     RETURNING *
   `
 
@@ -818,15 +818,15 @@ app.post('/api/developer/issues/claim', async (c) => {
 
 /** Submit work on an issue */
 app.post('/api/developer/issues/submit', async (c) => {
-  const { developer_id, configured_issue_id } = await c.req.json<{
+  const { developer_id, issue_id } = await c.req.json<{
     developer_id: string
-    configured_issue_id: number
+    issue_id: number
   }>()
 
   const [row] = await sql`
     UPDATE developer_issues
     SET status = 'submitted', submitted_at = NOW()
-    WHERE developer_id = ${developer_id} AND configured_issue_id = ${configured_issue_id}
+    WHERE developer_id = ${developer_id} AND issue_id = ${issue_id}
     RETURNING *
   `
 
@@ -842,18 +842,18 @@ app.get('/api/developer/earnings', async (c) => {
 
   const [totals] = await sql`
     SELECT
-      COALESCE(SUM(ci.salary) FILTER (WHERE di.status = 'completed'), 0) AS total_earned,
-      COALESCE(SUM(ci.salary) FILTER (WHERE di.status IN ('claimed','submitted')), 0) AS pending,
+      COALESCE(SUM(i.salary) FILTER (WHERE di.status = 'completed'), 0) AS total_earned,
+      COALESCE(SUM(i.salary) FILTER (WHERE di.status IN ('claimed','submitted')), 0) AS pending,
       COUNT(*) FILTER (WHERE di.status = 'completed') AS completed_count
     FROM developer_issues di
-    JOIN configured_issues ci ON ci.id = di.configured_issue_id
+    JOIN issues i ON i.id = di.issue_id
     WHERE di.developer_id = ${devId}
   `
 
   const history = await sql`
-    SELECT ci.title, ci.repo_full_name AS repo, ci.salary, di.completed_at
+    SELECT i.title, i.repo_full_name AS repo, i.salary, di.completed_at
     FROM developer_issues di
-    JOIN configured_issues ci ON ci.id = di.configured_issue_id
+    JOIN issues i ON i.id = di.issue_id
     WHERE di.developer_id = ${devId} AND di.status = 'completed'
     ORDER BY di.completed_at DESC
   `
@@ -932,16 +932,6 @@ app.post('/api/issues/configure', async (c) => {
   }>()
 
   for (const issue of issues) {
-    await sql`
-      INSERT INTO configured_issues (installation_id, repo_full_name, issue_number, title, salary, labels)
-      VALUES (${installation_id}, ${issue.repo_full_name}, ${issue.issue_number}, ${issue.title}, ${issue.salary}, ${issue.labels})
-      ON CONFLICT (installation_id, repo_full_name, issue_number) DO UPDATE SET
-        title = EXCLUDED.title,
-        salary = EXCLUDED.salary,
-        labels = EXCLUDED.labels
-    `
-
-    // Promote to issues table — this is the source of truth for the company dashboard
     await sql`
       INSERT INTO issues (installation_id, repo_full_name, issue_number, title, salary, labels)
       VALUES (${installation_id}, ${issue.repo_full_name}, ${issue.issue_number}, ${issue.title}, ${issue.salary}, ${issue.labels})

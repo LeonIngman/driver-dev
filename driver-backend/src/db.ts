@@ -40,20 +40,6 @@ export async function initDb() {
   `;
 
   await sql`
-    CREATE TABLE IF NOT EXISTS configured_issues (
-      id SERIAL PRIMARY KEY,
-      installation_id INTEGER NOT NULL,
-      repo_full_name TEXT NOT NULL,
-      issue_number INTEGER NOT NULL,
-      title TEXT NOT NULL,
-      salary INTEGER NOT NULL DEFAULT 0,
-      labels TEXT[] DEFAULT '{}',
-      created_at TIMESTAMPTZ DEFAULT NOW(),
-      UNIQUE(installation_id, repo_full_name, issue_number)
-    )
-  `;
-
-  await sql`
     CREATE TABLE IF NOT EXISTS developers (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       first_name TEXT NOT NULL DEFAULT '',
@@ -88,12 +74,12 @@ export async function initDb() {
     CREATE TABLE IF NOT EXISTS developer_issues (
       id SERIAL PRIMARY KEY,
       developer_id UUID NOT NULL REFERENCES developers(id),
-      configured_issue_id INTEGER NOT NULL REFERENCES configured_issues(id),
+      issue_id INTEGER NOT NULL REFERENCES issues(id),
       status TEXT NOT NULL DEFAULT 'claimed' CHECK (status IN ('claimed','submitted','completed')),
       claimed_at TIMESTAMPTZ DEFAULT NOW(),
       submitted_at TIMESTAMPTZ,
       completed_at TIMESTAMPTZ,
-      UNIQUE(developer_id, configured_issue_id)
+      UNIQUE(developer_id, issue_id)
     )
   `;
 
