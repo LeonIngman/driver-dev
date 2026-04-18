@@ -30,14 +30,13 @@ function Navbar() {
       position: 'sticky',
       top: 0,
       zIndex: 50,
-      height: 60,
       background: 'rgba(245,239,230,0.88)',
       backdropFilter: 'blur(16px)',
       WebkitBackdropFilter: 'blur(16px)',
       borderBottom: '1px solid var(--border)',
       display: 'flex',
       alignItems: 'center',
-      padding: '0 2.5rem',
+      padding: '0.75rem 2.5rem',
     }}>
       <Logo />
 
@@ -98,7 +97,7 @@ function Hero() {
       className="grid-pattern"
       style={{
         position: 'relative',
-        padding: '7rem 2.5rem 6rem',
+        padding: '4rem 2.5rem 3.5rem',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
@@ -112,7 +111,7 @@ function Hero() {
       <div style={{ position: 'absolute', bottom: 0, right: '12%', width: 320, height: 320, borderRadius: '50%', background: 'radial-gradient(circle, var(--orange-bg) 0%, transparent 65%)', pointerEvents: 'none' }} />
 
       {/* Eyebrow */}
-      <div className="anim-fade-up" style={{ marginBottom: '1.5rem' }}>
+      <div className="anim-fade-up" style={{ marginBottom: '1rem' }}>
         <span style={{
           display: 'inline-flex', alignItems: 'center', gap: '0.5rem',
           padding: '0.3rem 0.875rem', borderRadius: 999,
@@ -131,11 +130,11 @@ function Hero() {
         style={{
           fontFamily: 'var(--font-display)',
           fontWeight: 800,
-          fontSize: 'clamp(2.75rem, 6vw, 4.5rem)',
-          lineHeight: 1.06,
+          fontSize: 'clamp(2.25rem, 4.5vw, 3.5rem)',
+          lineHeight: 1.08,
           color: 'var(--text-1)',
-          maxWidth: 780,
-          marginBottom: '1.5rem',
+          maxWidth: 700,
+          marginBottom: '1.125rem',
           letterSpacing: '-0.025em',
         }}
       >
@@ -155,25 +154,25 @@ function Hero() {
       <p
         className="anim-fade-up d3"
         style={{
-          fontSize: '1.125rem',
+          fontSize: '1rem',
           color: 'var(--text-2)',
-          lineHeight: 1.65,
-          maxWidth: 520,
-          marginBottom: '2.5rem',
+          lineHeight: 1.6,
+          maxWidth: 480,
+          marginBottom: '1.75rem',
         }}
       >
         Driver is the bounty marketplace where engineering teams unlock their backlog — and developers earn real money solving real problems, powered by AI.
       </p>
 
       {/* Dual CTA */}
-      <div className="anim-fade-up d4" style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', justifyContent: 'center', marginBottom: '3.5rem' }}>
+      <div className="anim-fade-up d4" style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', justifyContent: 'center', marginBottom: '2.25rem' }}>
         <Link
           href="/company/signup"
           style={{
-            display: 'inline-flex', alignItems: 'center', gap: '0.625rem',
-            padding: '0.875rem 1.75rem',
+            display: 'inline-flex', alignItems: 'center', gap: '0.5rem',
+            padding: '0.75rem 1.5rem',
             background: 'var(--orange)', color: '#fff',
-            fontFamily: 'var(--font-body)', fontWeight: 700, fontSize: '0.975rem',
+            fontFamily: 'var(--font-body)', fontWeight: 700, fontSize: '0.9rem',
             borderRadius: 9, textDecoration: 'none',
             border: '1px solid transparent',
             boxShadow: '0 0 0 0 var(--orange)',
@@ -186,10 +185,10 @@ function Hero() {
         <Link
           href="/developer/signup"
           style={{
-            display: 'inline-flex', alignItems: 'center', gap: '0.625rem',
-            padding: '0.875rem 1.75rem',
+            display: 'inline-flex', alignItems: 'center', gap: '0.5rem',
+            padding: '0.75rem 1.5rem',
             background: 'transparent', color: 'var(--text-1)',
-            fontFamily: 'var(--font-body)', fontWeight: 600, fontSize: '0.975rem',
+            fontFamily: 'var(--font-body)', fontWeight: 600, fontSize: '0.9rem',
             borderRadius: 9, textDecoration: 'none',
             border: '1px solid var(--border-light)',
             transition: 'all 0.15s ease',
