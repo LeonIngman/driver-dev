@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import StartFixButton from './StartFixButton'
 import { cookies } from 'next/headers'
 
 const API = process.env.API_URL ?? 'http://localhost:3001'
@@ -70,7 +71,7 @@ export default async function RepoDetail({
 
   const openIssues = issues.filter(i => i.status !== 'completed')
   const totalValue = openIssues.reduce((a, i) => a + i.salary, 0)
-  const activeDev = new Set(issues.flatMap(i => i.devInitials)).size
+  const activeDev = issues.reduce((a, i) => a + i.devs, 0)
 
   return (
     <div className="main-content">
@@ -238,13 +239,11 @@ export default async function RepoDetail({
                     </td>
                     <td style={{ textAlign: 'right' }}>
                       {issue.status !== 'completed' ? (
-                        <Link
-                          href="/editor"
-                          className="btn btn-blue"
-                          style={{ padding: '0.35rem 0.875rem', fontSize: '0.78rem', textDecoration: 'none' }}
-                        >
-                          {issue.status === 'open' ? 'Claim & Fix' : 'Open Fix'}
-                        </Link>
+                        <StartFixButton
+                          org={org}
+                          repo={repo}
+                          issueNumber={Number(issue.id)}
+                        />
                       ) : (
                         <span className="badge badge-green" style={{ fontSize: '0.62rem' }}>Merged</span>
                       )}

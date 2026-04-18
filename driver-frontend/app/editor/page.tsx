@@ -110,7 +110,7 @@ export default function Editor() {
 
   useEffect(() => {
     if (!sessionId) return
-    fetch(`${API}/sessions/${sessionId}`)
+    fetch(`${API}/api/sessions/${sessionId}`)
       .then(r => r.ok ? r.json() : null)
       .then((data: Session | null) => {
         if (data) {
@@ -121,7 +121,7 @@ export default function Editor() {
       })
       .catch(() => {})
 
-    fetch(`${API}/sessions/${sessionId}/messages`)
+    fetch(`${API}/api/sessions/${sessionId}/messages`)
       .then(r => r.ok ? r.json() : null)
       .then(data => data && setMessages(data))
       .catch(() => {})
@@ -141,7 +141,7 @@ export default function Editor() {
     if (!sessionId) return
     setSubmitting(true)
     try {
-      const res = await fetch(`${API}/sessions/${sessionId}/submit`, { method: 'POST' })
+      const res = await fetch(`${API}/api/sessions/${sessionId}/submit`, { method: 'POST' })
       if (res.ok) router.push('/repos/detail')
     } finally {
       setSubmitting(false)

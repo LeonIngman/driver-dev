@@ -96,4 +96,15 @@ export async function initDb() {
       UNIQUE(developer_id, configured_issue_id)
     )
   `;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS sessions (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      repo_full_name TEXT NOT NULL,
+      issue_number INTEGER NOT NULL,
+      developer_id UUID REFERENCES developers(id),
+      status TEXT NOT NULL DEFAULT 'active',
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `
 }

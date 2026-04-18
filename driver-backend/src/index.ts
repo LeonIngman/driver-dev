@@ -323,12 +323,18 @@ app.get('/api/repos/:org/:repo/issues', async (c) => {
   const fullName = `${org}/${repo}`
 
   const rows = await sql`
-    SELECT issue_number, title, status, labels, salary, updated_at
-    FROM issues
-    WHERE repo_full_name = ${fullName}
+    SELECT
+      i.issue_number, i.title, i.status, i.labels, i.salary, i.updated_at,
+      COUNT(s.id) FILTER (WHERE s.status = 'active') AS active_devs
+    FROM issues i
+    LEFT JOIN sessions s
+      ON s.repo_full_name = i.repo_full_name
+     AND s.issue_number   = i.issue_number
+    WHERE i.repo_full_name = ${fullName}
+    GROUP BY i.issue_number, i.title, i.status, i.labels, i.salary, i.updated_at
     ORDER BY
-      CASE status WHEN 'open' THEN 0 WHEN 'claimed' THEN 1 WHEN 'in_review' THEN 2 ELSE 3 END,
-      salary DESC
+      CASE i.status WHEN 'open' THEN 0 WHEN 'claimed' THEN 1 WHEN 'in_review' THEN 2 ELSE 3 END,
+      i.salary DESC
   `
 
   const issues = rows.map((r) => ({
@@ -337,7 +343,7 @@ app.get('/api/repos/:org/:repo/issues', async (c) => {
     status:      r.status as 'open' | 'claimed' | 'in_review' | 'completed',
     labels:      r.labels as string[],
     salary:      Number(r.salary),
-    devs:        0,
+    devs:        Number(r.active_devs),
     devInitials: [] as string[],
     devColors:   [] as string[],
     comments:    0,
@@ -345,6 +351,79 @@ app.get('/api/repos/:org/:repo/issues', async (c) => {
   }))
 
   return c.json(issues)
+})
+
+// ─── Sessions API ──────────────────────────────────────────
+
+/** Create a session for a developer starting work on an issue */
+app.post('/api/sessions', async (c) => {
+  const { org, repo, issueNumber, developerId } = await c.req.json<{
+    org: string
+    repo: string
+    issueNumber: number
+    developerId?: string
+  }>()
+
+  const fullName = `${org}/${repo}`
+
+  const [session] = await sql`
+    INSERT INTO sessions (repo_full_name, issue_number, developer_id)
+    VALUES (${fullName}, ${issueNumber}, ${developerId ?? null})
+    RETURNING id
+  `
+
+  return c.json({ sessionId: session.id })
+})
+
+/** Fetch session data for the editor */
+app.get('/api/sessions/:id', async (c) => {
+  const { id } = c.req.param()
+
+  const [session] = await sql`
+    SELECT s.id, s.repo_full_name, s.issue_number, s.developer_id,
+           i.title, i.salary, i.labels
+    FROM sessions s
+    LEFT JOIN issues i
+      ON i.repo_full_name = s.repo_full_name
+     AND i.issue_number   = s.issue_number
+    WHERE s.id = ${id}
+  `
+
+  if (!session) return c.json({ error: 'Session not found' }, 404)
+
+  const repoName = (session.repo_full_name as string).split('/')[1] ?? session.repo_full_name
+
+  let userInitials = '?'
+  if (session.developer_id) {
+    const [dev] = await sql`
+      SELECT first_name, last_name, username FROM developers WHERE id = ${session.developer_id}
+    `
+    if (dev) {
+      userInitials = dev.first_name && dev.last_name
+        ? `${(dev.first_name as string)[0]}${(dev.last_name as string)[0]}`.toUpperCase()
+        : (dev.username as string ?? '?').slice(0, 2).toUpperCase()
+    }
+  }
+
+  return c.json({
+    issue: {
+      id:       session.issue_number,
+      title:    session.title ?? 'Untitled issue',
+      labels:   (session.labels as string[]) ?? [],
+      bounty:   `$${session.salary ?? 0}`,
+      repoName,
+    },
+    files:      [],
+    diff:       { added: 0, removed: 0 },
+    usage:      { tokens: 0, cost: '—' },
+    user:       { initials: userInitials },
+    activeFile: { name: 'index.ts', content: '' },
+  })
+})
+
+/** Chat message history for a session (stub — returns empty for now) */
+app.get('/api/sessions/:id/messages', async (c) => {
+  return c.json([])
 })
 
 /** Connect (save) a repo */
