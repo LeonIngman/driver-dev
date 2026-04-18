@@ -57,7 +57,7 @@ export default function DeveloperSignup() {
           overflow: 'hidden',
         }}
       >
-        <div style={{ position: 'absolute', top: '-80px', right: '-80px', width: 400, height: 400, borderRadius: '50%', background: 'radial-gradient(circle, rgba(59,130,246,0.07) 0%, transparent 70%)', pointerEvents: 'none' }} />
+        <div style={{ position: 'absolute', top: '-80px', right: '-80px', width: 400, height: 400, borderRadius: '50%', background: 'radial-gradient(circle, var(--blue-bg) 0%, transparent 70%)', pointerEvents: 'none' }} />
         <div style={{ position: 'absolute', bottom: '5%', left: '-60px', width: 280, height: 280, borderRadius: '50%', background: 'radial-gradient(circle, rgba(204,120,92,0.06) 0%, transparent 70%)', pointerEvents: 'none' }} />
 
         <Logo />
@@ -92,7 +92,7 @@ export default function DeveloperSignup() {
           <div className="anim-fade-up d5" style={{ marginTop: '2rem', background: 'var(--bg-2)', border: '1px solid var(--border)', borderRadius: 10, padding: '1rem 1.125rem' }}>
             <div style={{ fontSize: '0.7rem', color: 'var(--text-3)', marginBottom: '0.625rem', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700 }}>Top earner this week</div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-              <div style={{ width: 34, height: 34, borderRadius: '50%', background: 'linear-gradient(135deg, #3B82F6, #8B5CF6)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', fontWeight: 700, color: '#fff' }}>JK</div>
+              <div style={{ width: 34, height: 34, borderRadius: '50%', background: 'linear-gradient(135deg, var(--blue), var(--blue-light))', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', fontWeight: 700, color: '#fff' }}>JK</div>
               <div>
                 <div style={{ fontWeight: 600, fontSize: '0.875rem', color: 'var(--text-1)' }}>jamie_k</div>
                 <div style={{ fontSize: '0.75rem', color: 'var(--text-3)' }}>12 fixes merged · <span style={{ color: 'var(--green)' }}>$3,240 earned</span></div>

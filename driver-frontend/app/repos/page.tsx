@@ -153,7 +153,7 @@ export default function ReposMarketplace() {
 
         <div className="sidebar-bottom">
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
-            <div style={{ width: 30, height: 30, borderRadius: '50%', background: 'linear-gradient(135deg, #3B82F6, #8B5CF6)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div style={{ width: 30, height: 30, borderRadius: '50%', background: 'linear-gradient(135deg, var(--blue), var(--blue-light))', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <span style={{ fontSize: '0.65rem', fontWeight: 700, color: '#fff' }}>JK</span>
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
@@ -182,7 +182,7 @@ export default function ReposMarketplace() {
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginLeft: '0.5rem' }}>
-            <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(135deg, #3B82F6, #8B5CF6)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+            <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(135deg, var(--blue), var(--blue-light))', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
               <span style={{ fontSize: '0.6rem', fontWeight: 700, color: '#fff' }}>JK</span>
             </div>
           </div>

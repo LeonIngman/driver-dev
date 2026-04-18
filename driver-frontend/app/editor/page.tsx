@@ -162,9 +162,9 @@ function CodeEditor() {
           style={{
             display: 'flex',
             background: [14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28].includes(line.n)
-              ? 'rgba(59,130,246,0.04)' : 'transparent',
+              ? 'var(--blue-bg)' : 'transparent',
             borderLeft: [14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28].includes(line.n)
-              ? '2px solid rgba(59,130,246,0.35)' : '2px solid transparent',
+              ? '2px solid var(--blue-border)' : '2px solid transparent',
           }}
         >
           <span style={{ width: 42, flexShrink: 0, textAlign: 'right', paddingRight: '1rem', fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--text-3)', lineHeight: '1.6rem', userSelect: 'none' }}>
@@ -221,7 +221,7 @@ export default function Editor() {
             </svg>
           </button>
 
-          <div style={{ width: 26, height: 26, borderRadius: '50%', background: 'linear-gradient(135deg, #3B82F6, #8B5CF6)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ width: 26, height: 26, borderRadius: '50%', background: 'linear-gradient(135deg, var(--blue), var(--blue-light))', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <span style={{ fontSize: '0.58rem', fontWeight: 700, color: '#fff' }}>JK</span>
           </div>
         </div>

@@ -82,7 +82,7 @@ export default function RepoDetail() {
         </div>
         <div className="sidebar-bottom">
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
-            <div style={{ width: 30, height: 30, borderRadius: '50%', background: 'linear-gradient(135deg, #3B82F6, #8B5CF6)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div style={{ width: 30, height: 30, borderRadius: '50%', background: 'linear-gradient(135deg, var(--blue), var(--blue-light))', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <span style={{ fontSize: '0.65rem', fontWeight: 700, color: '#fff' }}>JK</span>
             </div>
             <div>
@@ -113,7 +113,7 @@ export default function RepoDetail() {
             </svg>
             <input className="input" type="text" placeholder="Search issues…" style={{ width: 200, paddingLeft: '2rem', padding: '0.4rem 0.75rem 0.4rem 2rem', fontSize: '0.8rem' }} />
           </div>
-          <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(135deg, #3B82F6, #8B5CF6)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginLeft: '0.5rem' }}>
+          <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(135deg, var(--blue), var(--blue-light))', display: 'flex', alignItems: 'center', justifyContent: 'center', marginLeft: '0.5rem' }}>
             <span style={{ fontSize: '0.6rem', fontWeight: 700, color: '#fff' }}>JK</span>
           </div>
         </div>

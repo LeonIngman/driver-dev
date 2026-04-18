@@ -107,9 +107,9 @@ function Hero() {
       }}
     >
       {/* Radial glow blobs */}
-      <div style={{ position: 'absolute', top: '-120px', left: '50%', transform: 'translateX(-50%)', width: 700, height: 500, borderRadius: '50%', background: 'radial-gradient(ellipse, rgba(59,130,246,0.08) 0%, transparent 65%)', pointerEvents: 'none' }} />
-      <div style={{ position: 'absolute', bottom: 0, left: '15%', width: 380, height: 380, borderRadius: '50%', background: 'radial-gradient(circle, rgba(249,115,22,0.06) 0%, transparent 65%)', pointerEvents: 'none' }} />
-      <div style={{ position: 'absolute', bottom: 0, right: '12%', width: 320, height: 320, borderRadius: '50%', background: 'radial-gradient(circle, rgba(59,130,246,0.07) 0%, transparent 65%)', pointerEvents: 'none' }} />
+      <div style={{ position: 'absolute', top: '-120px', left: '50%', transform: 'translateX(-50%)', width: 700, height: 500, borderRadius: '50%', background: 'radial-gradient(ellipse, var(--blue-bg) 0%, transparent 65%)', pointerEvents: 'none' }} />
+      <div style={{ position: 'absolute', bottom: 0, left: '15%', width: 380, height: 380, borderRadius: '50%', background: 'radial-gradient(circle, var(--orange-bg) 0%, transparent 65%)', pointerEvents: 'none' }} />
+      <div style={{ position: 'absolute', bottom: 0, right: '12%', width: 320, height: 320, borderRadius: '50%', background: 'radial-gradient(circle, var(--orange-bg) 0%, transparent 65%)', pointerEvents: 'none' }} />
 
       {/* Eyebrow */}
       <div className="anim-fade-up" style={{ marginBottom: '1.5rem' }}>
@@ -141,7 +141,7 @@ function Hero() {
       >
         Companies post issues.{' '}
         <span style={{
-          background: 'linear-gradient(135deg, var(--blue) 0%, var(--blue-dim) 100%)',
+          background: 'linear-gradient(135deg, var(--blue) 0%, var(--blue-light) 100%)',
           WebkitBackgroundClip: 'text',
           WebkitTextFillColor: 'transparent',
           backgroundClip: 'text',
@@ -337,7 +337,7 @@ function HowItWorks() {
             overflow: 'hidden',
           }}
         >
-          <div style={{ position: 'absolute', top: 0, right: 0, width: 200, height: 200, background: 'radial-gradient(circle at top right, rgba(59,130,246,0.07) 0%, transparent 70%)', pointerEvents: 'none' }} />
+          <div style={{ position: 'absolute', top: 0, right: 0, width: 200, height: 200, background: 'radial-gradient(circle at top right, var(--blue-bg) 0%, transparent 70%)', pointerEvents: 'none' }} />
           <div style={{ marginBottom: '1.5rem' }}>
             <span className="badge badge-blue" style={{ fontSize: '0.68rem' }}>For Developers</span>
           </div>
@@ -545,7 +545,7 @@ function BottomCTA() {
       >
         {/* bg decoration */}
         <div style={{ position: 'absolute', inset: 0, backgroundImage: 'linear-gradient(rgba(255,255,255,0.015) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.015) 1px, transparent 1px)', backgroundSize: '48px 48px', pointerEvents: 'none' }} />
-        <div style={{ position: 'absolute', top: '-80px', left: '50%', transform: 'translateX(-50%)', width: 600, height: 300, borderRadius: '50%', background: 'radial-gradient(ellipse, rgba(59,130,246,0.06) 0%, transparent 70%)', pointerEvents: 'none' }} />
+        <div style={{ position: 'absolute', top: '-80px', left: '50%', transform: 'translateX(-50%)', width: 600, height: 300, borderRadius: '50%', background: 'radial-gradient(ellipse, var(--blue-bg) 0%, transparent 70%)', pointerEvents: 'none' }} />
 
         {/* Company CTA */}
         <div style={{ position: 'relative', zIndex: 1 }}>

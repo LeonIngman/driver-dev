@@ -17,18 +17,18 @@
   --text-2: #5C5046;
   --text-3: #9A8F85;
 
-  /* Blues */
-  --blue: #2563EB;
-  --blue-light: #1D4ED8;
-  --blue-dim: #1E3A8A;
-  --blue-bg: rgba(37, 99, 235, 0.08);
-  --blue-border: rgba(37, 99, 235, 0.2);
+  /* Terracotta — brand primary (replaces blue) */
+  --blue: #C15F3C;
+  --blue-light: #A84E2E;
+  --blue-dim: #7A3820;
+  --blue-bg: rgba(193, 95, 60, 0.08);
+  --blue-border: rgba(193, 95, 60, 0.22);
 
-  /* Orange — Anthropic terracotta */
-  --orange: #CC785C;
-  --orange-light: #B86344;
-  --orange-bg: rgba(204, 120, 92, 0.1);
-  --orange-border: rgba(204, 120, 92, 0.28);
+  /* Orange — warm secondary */
+  --orange: #C15F3C;
+  --orange-light: #A84E2E;
+  --orange-bg: rgba(193, 95, 60, 0.08);
+  --orange-border: rgba(193, 95, 60, 0.22);
 
   /* States — darkened for legibility on light bg */
   --green: #047857;
