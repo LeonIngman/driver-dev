@@ -11,7 +11,7 @@ loader.config({
   },
 })
 
-const API = process.env.NEXT_PUBLIC_API_URL
+const API = (process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001').replace(/\/$/, '')
 
 /* ── Types ───────────────────────────────────────── */
 type FileNode = { name: string; path: string; type: 'file' | 'folder'; active?: boolean; children?: FileNode[]; ext?: string }

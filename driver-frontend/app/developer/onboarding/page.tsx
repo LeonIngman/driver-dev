@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Suspense } from 'react'
 
-const API = process.env.NEXT_PUBLIC_API_URL
+const API = (process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001').replace(/\/$/, '')
 
 const AnthropicIcon = () => (
   <svg width="20" height="20" viewBox="0 0 32 32" fill="none">

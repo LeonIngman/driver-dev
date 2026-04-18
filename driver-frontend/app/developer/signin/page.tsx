@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 
-const API = process.env.NEXT_PUBLIC_API_URL
+const API = (process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001').replace(/\/$/, '')
 
 const Logo = () => (
   <Link href="/" style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 8 }}>

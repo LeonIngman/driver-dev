@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { useEffect, useState, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001'
+const API = (process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001').replace(/\/$/, '')
 
 const Logo = () => (
   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
