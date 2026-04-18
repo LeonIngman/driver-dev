@@ -173,36 +173,99 @@ app.get('/auth/github/callback', async (c) => {
 
 // ─── Repo API ──────────────────────────────────────────────
 
-/** List repos available on a given installation */
+/** Developer marketplace stats */
+app.get('/api/repos/stats', async (c) => {
+  const [row] = await sql`
+    SELECT
+      COUNT(*) FILTER (WHERE status = 'open')                   AS "totalIssues",
+      COALESCE(SUM(salary) FILTER (WHERE status = 'open'), 0)  AS "totalValue"
+    FROM issues
+  `
+  return c.json({
+    totalIssues: Number(row.totalIssues),
+    totalValue:  Number(row.totalValue),
+    activeDevs:  0,
+  })
+})
+
+/**
+ * Without installation_id → developer marketplace view (flat Repo[])
+ * With    installation_id → company repo picker (raw GitHub data)
+ */
 app.get('/api/repos', async (c) => {
   const installationId = Number(c.req.query('installation_id'))
-  if (!installationId) return c.json({ error: 'installation_id required' }, 400)
 
-  const data = await getInstallationRepos(installationId) as {
-    repositories: Array<{
-      id: number
-      name: string
-      full_name: string
-      private: boolean
-      language: string | null
-      stargazers_count: number
-      open_issues_count: number
-      pushed_at: string
-    }>
+  // ── Company: list repos on a GitHub App installation ─────
+  if (installationId) {
+    const data = await getInstallationRepos(installationId) as {
+      repositories: Array<{
+        id: number
+        name: string
+        full_name: string
+        private: boolean
+        language: string | null
+        stargazers_count: number
+        open_issues_count: number
+        pushed_at: string
+      }>
+    }
+
+    return c.json({
+      repos: data.repositories.map((r) => ({
+        id: r.id,
+        name: r.name,
+        full_name: r.full_name,
+        private: r.private,
+        language: r.language,
+        stars: r.stargazers_count,
+        issues: r.open_issues_count,
+        pushed_at: r.pushed_at,
+      })),
+    })
   }
 
-  return c.json({
-    repos: data.repositories.map((r) => ({
-      id: r.id,
-      name: r.name,
-      full_name: r.full_name,
-      private: r.private,
-      language: r.language,
-      stars: r.stargazers_count,
-      issues: r.open_issues_count,
-      pushed_at: r.pushed_at,
-    })),
+  // ── Developer: marketplace view aggregated from DB ────────
+  const rows = await sql`
+    SELECT
+      i.repo_full_name,
+      gi.account_login,
+      COUNT(*)                                                    AS issue_count,
+      COALESCE(SUM(i.salary), 0)                                  AS total_value,
+      COALESCE(AVG(i.salary), 0)                                  AS avg_salary,
+      ARRAY_AGG(DISTINCT elem) FILTER (WHERE elem IS NOT NULL)    AS tags
+    FROM issues i
+    LEFT JOIN connected_repos cr
+      ON cr.repo_full_name = i.repo_full_name
+    LEFT JOIN github_installations gi
+      ON gi.installation_id = cr.installation_id
+    LEFT JOIN LATERAL UNNEST(i.labels) AS elem ON TRUE
+    WHERE i.status = 'open'
+    GROUP BY i.repo_full_name, gi.account_login
+    ORDER BY total_value DESC
+  `
+
+  const repos = rows.map((r) => {
+    const fullName = r.repo_full_name as string
+    const repoName = fullName.split('/')[1] ?? fullName
+    const org      = (r.account_login as string | null) ?? fullName.split('/')[0] ?? '?'
+    return {
+      org,
+      orgInitial:  org.slice(0, 2).toUpperCase(),
+      orgColor:    '#E86C2C',
+      name:        repoName,
+      description: '',
+      lang:        '',
+      langDot:     '',
+      issues:      Number(r.issue_count),
+      totalValue:  Number(r.total_value),
+      avgSalary:   Math.round(Number(r.avg_salary)),
+      devs:        0,
+      stars:       0,
+      tags:        (r.tags as string[] | null) ?? [],
+    }
   })
+
+  return c.json(repos)
 })
 
 /** Connect (save) a repo */
@@ -324,9 +387,89 @@ app.post('/api/issues/configure', async (c) => {
         salary = EXCLUDED.salary,
         labels = EXCLUDED.labels
     `
+
+    // Promote to issues table — this is the source of truth for the company dashboard
+    await sql`
+      INSERT INTO issues (installation_id, repo_full_name, issue_number, title, salary, labels)
+      VALUES (${installation_id}, ${issue.repo_full_name}, ${issue.issue_number}, ${issue.title}, ${issue.salary}, ${issue.labels})
+      ON CONFLICT (installation_id, repo_full_name, issue_number) DO UPDATE SET
+        title  = EXCLUDED.title,
+        salary = EXCLUDED.salary,
+        labels = EXCLUDED.labels,
+        updated_at = NOW()
+    `
   }
 
   return c.json({ ok: true, count: issues.length })
+})
+
+// ─── Company Dashboard API ────────────────────────────────
+
+/** Stats must be registered before the issues list to avoid route shadowing */
+app.get('/api/company/issues/stats', async (c) => {
+  const [row] = await sql`
+    SELECT
+      COUNT(*) FILTER (WHERE status = 'open')                    AS "openCount",
+      COUNT(*) FILTER (WHERE status IN ('claimed', 'in_review')) AS "inProgressCount",
+      COALESCE(SUM(salary) FILTER (WHERE status = 'open'), 0)   AS "totalValue",
+      COUNT(*)                                                   AS "total"
+    FROM issues
+  `
+  return c.json({
+    openCount:       Number(row.openCount),
+    inProgressCount: Number(row.inProgressCount),
+    activeDevs:      0,
+    totalValue:      Number(row.totalValue),
+    total:           Number(row.total),
+  })
+})
+
+/** Promoted issues — what the company dashboard table shows */
+app.get('/api/company/issues', async (c) => {
+  const rows = await sql`SELECT * FROM issues ORDER BY created_at DESC`
+  const issues = rows.map((r) => ({
+    id:          `#${r.issue_number}`,
+    title:       r.title,
+    repo:        (r.repo_full_name as string).split('/')[1] ?? r.repo_full_name,
+    status:      r.status,
+    label:       ((r.labels as string[])[0]) ?? '',
+    salary:      String(r.salary),
+    devs:        0,
+    devInitials: [] as string[],
+    devColors:   [] as string[],
+    updated:     new Date(r.updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+  }))
+  return c.json({ issues, total: issues.length })
+})
+
+/** Repos for the filter dropdown */
+app.get('/api/company/repos', async (c) => {
+  const rows = await sql`SELECT DISTINCT repo_full_name FROM connected_repos`
+  return c.json(rows.map((r) => ({
+    name: (r.repo_full_name as string).split('/')[1] ?? r.repo_full_name,
+    full: r.repo_full_name,
+  })))
+})
+
+/** Company profile for the topbar */
+app.get('/api/company/profile', async (c) => {
+  const [company] = await sql`SELECT org_name, plan FROM companies LIMIT 1`
+  if (company) {
+    return c.json({
+      name:     company.org_name,
+      initials: (company.org_name as string).slice(0, 2).toUpperCase(),
+      plan:     company.plan,
+    })
+  }
+  const [inst] = await sql`SELECT account_login FROM github_installations LIMIT 1`
+  if (inst) {
+    return c.json({
+      name:     inst.account_login,
+      initials: (inst.account_login as string).slice(0, 2).toUpperCase(),
+      plan:     'Free',
+    })
+  }
+  return c.json({ name: '—', initials: '?', plan: '—' })
 })
 
 export const handler = handle(app)

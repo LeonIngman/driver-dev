@@ -67,4 +67,20 @@ export async function initDb() {
       created_at TIMESTAMPTZ DEFAULT NOW()
     )
   `
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS issues (
+      id SERIAL PRIMARY KEY,
+      installation_id INTEGER NOT NULL,
+      repo_full_name TEXT NOT NULL,
+      issue_number INTEGER NOT NULL,
+      title TEXT NOT NULL,
+      salary INTEGER NOT NULL DEFAULT 0,
+      labels TEXT[] DEFAULT '{}',
+      status TEXT NOT NULL DEFAULT 'open',
+      updated_at TIMESTAMPTZ DEFAULT NOW(),
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE(installation_id, repo_full_name, issue_number)
+    )
+  `
 }
