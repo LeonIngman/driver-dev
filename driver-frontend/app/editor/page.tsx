@@ -100,12 +100,11 @@ export default function Editor() {
   const [files, setFiles] = useState<FileNode[]>([])
   const [messages, setMessages] = useState<Message[]>([])
   const [chatInput, setChatInput] = useState('')
-  const [sending, setSending] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [code, setCode] = useState(DEFAULT_CODE)
   const [activeTab, setActiveTab] = useState<'Code' | 'Preview'>('Code')
   const [chatOpen, setChatOpen] = useState(true)
-  const [filesOpen, setFilesOpen] = useState(true)
+  const [filesOpen, setFilesOpen] = useState(false)
   // Preview tab is a placeholder — will be replaced with e2b sandbox
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
@@ -132,25 +131,10 @@ export default function Editor() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
-  async function handleSend() {
-    if (!chatInput.trim() || !sessionId) return
-    const content = chatInput.trim()
+  function handleSend() {
+    if (!chatInput.trim()) return
+    setMessages(prev => [...prev, { role: 'user', content: chatInput.trim() }])
     setChatInput('')
-    setMessages(prev => [...prev, { role: 'user', content }])
-    setSending(true)
-    try {
-      const res = await fetch(`${API}/sessions/${sessionId}/messages`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content }),
-      })
-      if (res.ok) {
-        const reply = await res.json()
-        setMessages(prev => [...prev, reply])
-      }
-    } finally {
-      setSending(false)
-    }
   }
 
   async function handleSubmit() {
@@ -289,18 +273,6 @@ export default function Editor() {
               </div>
             ))}
 
-            {sending && (
-              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                <div style={{ width: 22, height: 22, borderRadius: 5, background: '#CC785C18', border: '1px solid #CC785C33', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                  <AnthropicMark />
-                </div>
-                <div style={{ background: 'var(--bg-3)', border: '1px solid var(--border)', borderRadius: '12px 12px 12px 2px', padding: '0.5rem 0.75rem', display: 'flex', gap: '4px', alignItems: 'center' }}>
-                  {[0, 1, 2].map(i => (
-                    <div key={i} style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--text-3)', animation: `pulse-dot 1.2s ease-in-out ${i * 0.2}s infinite` }} />
-                  ))}
-                </div>
-              </div>
-            )}
             <div ref={messagesEndRef} />
           </div>
 
@@ -311,7 +283,7 @@ export default function Editor() {
                 rows={3}
                 value={chatInput}
                 onChange={e => setChatInput(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSend() }}
+                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() } }}
                 style={{
                   width: '100%', background: 'transparent', border: 'none', outline: 'none',
                   padding: '0.625rem 0.75rem', color: 'var(--text-1)', fontSize: '0.825rem',
@@ -319,8 +291,8 @@ export default function Editor() {
                 }}
               />
               <div style={{ padding: '0.375rem 0.625rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid var(--border)' }}>
-                <span style={{ fontSize: '0.67rem', color: 'var(--text-3)', fontFamily: 'var(--font-mono)' }}>⌘↵ to send</span>
-                <button className="btn btn-blue" style={{ padding: '0.3rem 0.7rem', fontSize: '0.75rem' }} onClick={handleSend} disabled={sending}>
+                <span style={{ fontSize: '0.67rem', color: 'var(--text-3)', fontFamily: 'var(--font-mono)' }}>↵ to send · ⇧↵ newline</span>
+                <button className="btn btn-blue" style={{ padding: '0.3rem 0.7rem', fontSize: '0.75rem' }} onClick={handleSend}>
                   Send
                   <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
                     <path d="M1.5 5.5h8M6 2l3.5 3.5L6 9" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
