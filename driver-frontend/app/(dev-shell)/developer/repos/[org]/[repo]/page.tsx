@@ -38,9 +38,12 @@ async function fetchIssues(org: string, repo: string): Promise<Issue[]> {
 async function fetchInitials(): Promise<string> {
   try {
     const cookieStore = await cookies()
-    const devId = cookieStore.get('developer_id')?.value
-    const url = devId ? `${API}/api/developer/profile?id=${devId}` : `${API}/api/developer/profile`
-    const res = await fetch(url, { cache: 'no-store' })
+    const token = cookieStore.get('token')?.value
+    if (!token) return '?'
+    const res = await fetch(`${API}/api/developer/profile`, {
+      cache: 'no-store',
+      headers: { Authorization: `Bearer ${token}` },
+    })
     if (!res.ok) return '?'
     const data = await res.json()
     return data.initials ?? '?'
@@ -78,7 +81,7 @@ export default async function RepoDetail({
 
       {/* Topbar */}
       <div className="topbar">
-        <Link href="/repos" style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', fontSize: '0.78rem', color: 'var(--text-3)', textDecoration: 'none', transition: 'color 0.1s' }}>
+        <Link href="/developer/repos" style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', fontSize: '0.78rem', color: 'var(--text-3)', textDecoration: 'none', transition: 'color 0.1s' }}>
           <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M8.5 3L5 6.5l3.5 3.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/></svg>
           Browse
         </Link>
@@ -93,9 +96,11 @@ export default async function RepoDetail({
           </svg>
           <input className="input" type="text" placeholder="Search issues…" style={{ width: 200, paddingLeft: '2rem', padding: '0.4rem 0.75rem 0.4rem 2rem', fontSize: '0.8rem' }} />
         </div>
-        <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(135deg, var(--blue), var(--blue-light))', display: 'flex', alignItems: 'center', justifyContent: 'center', marginLeft: '0.5rem' }}>
-          <span style={{ fontSize: '0.6rem', fontWeight: 700, color: '#fff' }}>{initials}</span>
-        </div>
+        <Link href="/developer/profile" style={{ textDecoration: 'none', marginLeft: '0.5rem' }}>
+          <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(135deg, var(--blue), var(--blue-light))', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+            <span style={{ fontSize: '0.6rem', fontWeight: 700, color: '#fff' }}>{initials}</span>
+          </div>
+        </Link>
       </div>
 
       {/* Content */}

@@ -129,7 +129,7 @@ export default function RepoFilters({ repos }: { repos: Repo[] }) {
         {filtered.map(repo => (
           <Link
             key={`${repo.org}-${repo.name}`}
-            href={`/repos/${repo.org.toLowerCase()}/${repo.name}`}
+            href={`/developer/repos/${repo.org.toLowerCase()}/${repo.name}`}
             style={{ textDecoration: 'none' }}
           >
             <div
