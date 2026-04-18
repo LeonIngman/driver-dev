@@ -525,6 +525,133 @@ app.get('/api/developer/profile/:username', async (c) => {
   })
 })
 
+// ─── Developer Issues API ─────────────────────────────
+
+/** List issues for the logged-in developer */
+app.get('/api/developer/issues', async (c) => {
+  const devId = c.req.query('developer_id')
+
+  const rows = await sql`
+    SELECT di.id, di.status, di.claimed_at, di.submitted_at, di.completed_at,
+           ci.issue_number, ci.title, ci.repo_full_name, ci.salary, ci.labels
+    FROM developer_issues di
+    JOIN configured_issues ci ON ci.id = di.configured_issue_id
+    ${devId ? sql`WHERE di.developer_id = ${devId}` : sql``}
+    ORDER BY di.claimed_at DESC
+  `
+
+  const issues = rows.map((r: any) => ({
+    id: String(r.issue_number),
+    title: r.title,
+    repo: r.repo_full_name,
+    status: r.status,
+    labels: r.labels ?? [],
+    salary: r.salary,
+    devs: 0,
+    devInitials: [],
+    devColors: [],
+    comments: 0,
+    updated: (r.completed_at ?? r.submitted_at ?? r.claimed_at)?.toISOString?.() ?? '',
+  }))
+
+  return c.json({ issues, total: issues.length })
+})
+
+/** Stats for the developer issues page */
+app.get('/api/developer/issues/stats', async (c) => {
+  const devId = c.req.query('developer_id')
+
+  const [stats] = await sql`
+    SELECT
+      COUNT(*) FILTER (WHERE di.status = 'claimed') AS claimed_count,
+      COUNT(*) FILTER (WHERE di.status IN ('claimed','submitted')) AS open_count,
+      COALESCE(SUM(ci.salary) FILTER (WHERE di.status IN ('claimed','submitted')), 0) AS total_value,
+      COALESCE(SUM(ci.salary) FILTER (WHERE di.status = 'completed'), 0) AS earned_total
+    FROM developer_issues di
+    JOIN configured_issues ci ON ci.id = di.configured_issue_id
+    ${devId ? sql`WHERE di.developer_id = ${devId}` : sql``}
+  `
+
+  return c.json({
+    openCount: Number(stats.open_count),
+    claimedCount: Number(stats.claimed_count),
+    totalValue: Number(stats.total_value),
+    earnedTotal: Number(stats.earned_total),
+  })
+})
+
+/** Claim an issue */
+app.post('/api/developer/issues/claim', async (c) => {
+  const { developer_id, configured_issue_id } = await c.req.json<{
+    developer_id: string
+    configured_issue_id: number
+  }>()
+
+  const [row] = await sql`
+    INSERT INTO developer_issues (developer_id, configured_issue_id, status)
+    VALUES (${developer_id}, ${configured_issue_id}, 'claimed')
+    ON CONFLICT (developer_id, configured_issue_id) DO NOTHING
+    RETURNING *
+  `
+
+  return c.json({ claimed: row ?? null })
+})
+
+/** Submit work on an issue */
+app.post('/api/developer/issues/submit', async (c) => {
+  const { developer_id, configured_issue_id } = await c.req.json<{
+    developer_id: string
+    configured_issue_id: number
+  }>()
+
+  const [row] = await sql`
+    UPDATE developer_issues
+    SET status = 'submitted', submitted_at = NOW()
+    WHERE developer_id = ${developer_id} AND configured_issue_id = ${configured_issue_id}
+    RETURNING *
+  `
+
+  return c.json({ submitted: row ?? null })
+})
+
+// ─── Developer Earnings API ──────────────────────────
+
+/** Earnings summary for the logged-in developer */
+app.get('/api/developer/earnings', async (c) => {
+  const devId = c.req.query('developer_id')
+  if (!devId) return c.json({ error: 'developer_id required' }, 400)
+
+  const [totals] = await sql`
+    SELECT
+      COALESCE(SUM(ci.salary) FILTER (WHERE di.status = 'completed'), 0) AS total_earned,
+      COALESCE(SUM(ci.salary) FILTER (WHERE di.status IN ('claimed','submitted')), 0) AS pending,
+      COUNT(*) FILTER (WHERE di.status = 'completed') AS completed_count
+    FROM developer_issues di
+    JOIN configured_issues ci ON ci.id = di.configured_issue_id
+    WHERE di.developer_id = ${devId}
+  `
+
+  const history = await sql`
+    SELECT ci.title, ci.repo_full_name AS repo, ci.salary, di.completed_at
+    FROM developer_issues di
+    JOIN configured_issues ci ON ci.id = di.configured_issue_id
+    WHERE di.developer_id = ${devId} AND di.status = 'completed'
+    ORDER BY di.completed_at DESC
+  `
+
+  return c.json({
+    totalEarned: Number(totals.total_earned),
+    pending: Number(totals.pending),
+    completedCount: Number(totals.completed_count),
+    history: history.map((h: any) => ({
+      title: h.title,
+      repo: h.repo,
+      salary: h.salary,
+      completedAt: h.completed_at,
+    })),
+  })
+})
+
 // ─── Issues API ───────────────────────────────────────────
 
 /** Fetch open issues from GitHub for all connected repos of an installation */
