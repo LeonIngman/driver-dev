@@ -296,9 +296,9 @@ export default function Editor() {
         <Logo />
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', fontSize: '0.75rem', color: 'var(--text-3)', marginLeft: '0.5rem' }}>
-          <Link href="/repos" style={{ color: 'var(--text-3)', textDecoration: 'none' }}>Browse</Link>
+          <Link href="/developer/repos" style={{ color: 'var(--text-3)', textDecoration: 'none' }}>Browse</Link>
           <span>/</span>
-          <Link href="/repos/detail" style={{ color: 'var(--text-3)', textDecoration: 'none' }}>{repoName || '...'}</Link>
+          <Link href="/developer/repos/detail" style={{ color: 'var(--text-3)', textDecoration: 'none' }}>{issue?.repoName ?? '…'}</Link>
           <span>/</span>
           <span style={{ color: 'var(--text-1)', fontWeight: 500 }}>
             {issue ? `#${issue.id} · ${issue.title}` : '...'}
