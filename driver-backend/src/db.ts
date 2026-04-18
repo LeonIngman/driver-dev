@@ -99,4 +99,14 @@ export async function initDb() {
   // Add columns if they don't exist (for existing databases)
   await sql`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS branch_name TEXT`
   await sql`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS default_branch TEXT`
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS session_messages (
+      id SERIAL PRIMARY KEY,
+      session_id UUID NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+      role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
+      content TEXT NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `
 }
