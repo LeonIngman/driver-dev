@@ -84,7 +84,7 @@ export default function CompanySignup() {
           </h2>
           <p style={{ color: 'var(--text-2)', fontSize: '0.875rem', marginBottom: '1.25rem' }}>
             Already have an account?{' '}
-            <Link href="#" style={{ color: 'var(--blue)', textDecoration: 'none' }}>Sign in</Link>
+            <Link href="/company/signin" style={{ color: 'var(--blue)', textDecoration: 'none' }}>Sign in</Link>
           </p>
 
           <button className="oauth-btn" type="button" onClick={() => { window.location.href = `${API}/auth/github?role=company` }}>
