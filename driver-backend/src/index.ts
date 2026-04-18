@@ -397,6 +397,146 @@ app.get('/api/installations', async (c) => {
   return c.json({ installations: rows })
 })
 
+// ─── Company Profile API ─────────────────────────────
+
+function toSlug(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+}
+
+/** Company profile — data for the logged-in company */
+app.get('/api/company/profile', async (c) => {
+  // TODO: use auth — for now, grab the first company
+  const [company] = await sql`SELECT * FROM companies ORDER BY created_at ASC LIMIT 1`
+
+  if (!company) {
+    return c.json({ name: '—', initials: '?', plan: '—', slug: '' })
+  }
+
+  const slug = toSlug(company.org_name)
+  const initials = company.org_name
+    .split(/\s+/)
+    .map((w: string) => w[0])
+    .join('')
+    .toUpperCase()
+    .slice(0, 2) || '?'
+
+  return c.json({
+    name: company.org_name,
+    initials,
+    plan: company.plan,
+    slug,
+  })
+})
+
+/** Company repos for sidebar */
+app.get('/api/company/repos', async (c) => {
+  // TODO: use auth — for now, grab repos from the first company's installation
+  const [company] = await sql`SELECT * FROM companies ORDER BY created_at ASC LIMIT 1`
+  if (!company) return c.json([])
+
+  const repos = await sql`
+    SELECT cr.repo_full_name
+    FROM connected_repos cr
+    JOIN github_installations gi ON gi.installation_id = cr.installation_id
+    WHERE gi.company_id = ${company.id}
+  `
+
+  return c.json(repos.map((r: any) => ({
+    name: r.repo_full_name.split('/').pop(),
+    full: r.repo_full_name,
+  })))
+})
+
+/** Public company profile */
+app.get('/api/company/profile/:slug', async (c) => {
+  const slug = c.req.param('slug')
+
+  const companies_list = await sql`SELECT * FROM companies`
+  const company = companies_list.find((co: any) => toSlug(co.org_name) === slug)
+
+  if (!company) return c.json({ error: 'Company not found' }, 404)
+
+  const initials = company.org_name
+    .split(/\s+/)
+    .map((w: string) => w[0])
+    .join('')
+    .toUpperCase()
+    .slice(0, 2) || '?'
+
+  const repos = await sql`
+    SELECT cr.repo_full_name, COUNT(ci.id) AS issue_count
+    FROM connected_repos cr
+    JOIN github_installations gi ON gi.installation_id = cr.installation_id
+    LEFT JOIN configured_issues ci ON ci.repo_full_name = cr.repo_full_name AND ci.installation_id = cr.installation_id
+    WHERE gi.company_id = ${company.id}
+    GROUP BY cr.repo_full_name
+  `
+
+  const [stats] = await sql`
+    SELECT
+      COUNT(ci.id) AS total_issues,
+      COUNT(ci.id) FILTER (WHERE NOT EXISTS (
+        SELECT 1 FROM developer_issues di WHERE di.configured_issue_id = ci.id AND di.status = 'completed'
+      )) AS open_issues,
+      COUNT(DISTINCT di.developer_id) AS active_devs,
+      COALESCE(SUM(ci.salary) FILTER (WHERE di.status = 'completed'), 0) AS total_paid
+    FROM configured_issues ci
+    JOIN connected_repos cr ON cr.repo_full_name = ci.repo_full_name AND cr.installation_id = ci.installation_id
+    JOIN github_installations gi ON gi.installation_id = cr.installation_id
+    LEFT JOIN developer_issues di ON di.configured_issue_id = ci.id
+    WHERE gi.company_id = ${company.id}
+  `
+
+  // GitHub org name from installation
+  const [installation] = await sql`
+    SELECT account_login FROM github_installations WHERE company_id = ${company.id} LIMIT 1
+  `
+
+  // Recent issue activity
+  const recentActivity = await sql`
+    SELECT di.status, ci.title, ci.repo_full_name AS repo, ci.salary,
+           COALESCE(di.completed_at, di.submitted_at, di.claimed_at) AS date,
+           d.username AS developer_username
+    FROM developer_issues di
+    JOIN configured_issues ci ON ci.id = di.configured_issue_id
+    JOIN connected_repos cr ON cr.repo_full_name = ci.repo_full_name AND cr.installation_id = ci.installation_id
+    JOIN github_installations gi ON gi.installation_id = cr.installation_id
+    JOIN developers d ON d.id = di.developer_id
+    WHERE gi.company_id = ${company.id}
+    ORDER BY COALESCE(di.completed_at, di.submitted_at, di.claimed_at) DESC
+    LIMIT 10
+  `
+
+  return c.json({
+    name: company.org_name,
+    slug,
+    initials,
+    plan: company.plan,
+    email: company.email ?? null,
+    githubOrg: installation?.account_login ?? null,
+    memberSince: company.created_at,
+    repos: repos.map((r: any) => ({
+      name: r.repo_full_name.split('/').pop(),
+      full: r.repo_full_name,
+      issueCount: Number(r.issue_count),
+    })),
+    stats: {
+      totalIssues: Number(stats.total_issues),
+      openIssues: Number(stats.open_issues),
+      activeDevs: Number(stats.active_devs),
+      totalPaid: Number(stats.total_paid),
+    },
+    recentActivity: recentActivity.map((a: any) => ({
+      type: a.status,
+      issueTitle: a.title,
+      repo: a.repo,
+      salary: a.salary,
+      date: a.date,
+      developer: a.developer_username,
+    })),
+  })
+})
+
 // ─── Developer Profile API ────────────────────────────
 
 function maskApiKey(key: string | null): string | null {
