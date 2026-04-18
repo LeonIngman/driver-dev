@@ -1,5 +1,7 @@
 import Link from 'next/link'
 
+const API = process.env.API_URL ?? 'http://localhost:3001'
+
 const Logo = () => (
   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
     <div style={{ width: 26, height: 26, background: 'var(--blue)', borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -16,6 +18,13 @@ const navItems = [
   { label: 'Settings', icon: <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><circle cx="7.5" cy="7.5" r="2" stroke="currentColor" strokeWidth="1.3"/><path d="M7.5 1.5v1M7.5 12.5v1M1.5 7.5h1M12.5 7.5h1" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg> },
 ]
 
+type RepoDetail = {
+  org: string; orgInitial: string; orgColor: string
+  name: string; fullName: string; description: string
+  lang: string; langDot: string
+  stars: number; tags: string[]
+}
+
 type Issue = {
   id: string; title: string
   status: 'open' | 'claimed' | 'in_review' | 'completed'
@@ -24,18 +33,21 @@ type Issue = {
   comments: number; updated: string
 }
 
-const issues: Issue[] = [
-  { id: '384', title: 'Fix race condition in streaming response handler', status: 'in_review', labels: ['bug', 'P1'], salary: 450, devs: 2, devInitials: ['JK', 'LM'], devColors: ['#3B82F6', '#8B5CF6'], comments: 7, updated: '12m ago' },
-  { id: '381', title: 'Add retry logic for failed API calls with exponential backoff', status: 'claimed', labels: ['enhancement'], salary: 280, devs: 1, devInitials: ['RS'], devColors: ['#F97316'], comments: 3, updated: '1h ago' },
-  { id: '375', title: 'Memory leak when using streaming with large context windows', status: 'open', labels: ['bug', 'performance'], salary: 600, devs: 4, devInitials: ['AA', 'BT', 'CN', 'DP'], devColors: ['#34D399', '#60A5FA', '#F87171', '#FBBF24'], comments: 12, updated: '2h ago' },
-  { id: '372', title: 'Tool call response parsing fails on nested JSON schemas', status: 'open', labels: ['bug', 'P2'], salary: 350, devs: 2, devInitials: ['EF', 'GH'], devColors: ['#A78BFA', '#34D399'], comments: 5, updated: '4h ago' },
-  { id: '368', title: 'Add support for custom stop sequences in streaming mode', status: 'open', labels: ['feature'], salary: 400, devs: 1, devInitials: ['IJ'], devColors: ['#60A5FA'], comments: 2, updated: '5h ago' },
-  { id: '361', title: 'Rate limiting headers not returned on 429 responses', status: 'open', labels: ['bug'], salary: 175, devs: 0, devInitials: [], devColors: [], comments: 1, updated: '8h ago' },
-  { id: '358', title: 'Improve TypeScript types for vision API responses', status: 'open', labels: ['enhancement', 'types'], salary: 220, devs: 0, devInitials: [], devColors: [], comments: 0, updated: '1d ago' },
-  { id: '344', title: 'Document batch API message format with examples', status: 'open', labels: ['docs'], salary: 120, devs: 1, devInitials: ['KL'], devColors: ['#F97316'], comments: 0, updated: '2d ago' },
-  { id: '338', title: 'SDK should expose raw HTTP response headers', status: 'open', labels: ['feature'], salary: 300, devs: 3, devInitials: ['MN', 'OP', 'QR'], devColors: ['#3B82F6', '#34D399', '#F87171'], comments: 8, updated: '3d ago' },
-  { id: '330', title: 'Fix incorrect token count in streaming chunks', status: 'completed', labels: ['bug'], salary: 250, devs: 1, devInitials: ['ST'], devColors: ['#60A5FA'], comments: 4, updated: '5d ago' },
-]
+async function fetchRepo(org: string, repo: string): Promise<RepoDetail | null> {
+  try {
+    const res = await fetch(`${API}/api/repos/${org}/${repo}`, { cache: 'no-store' })
+    if (!res.ok) return null
+    return await res.json()
+  } catch { return null }
+}
+
+async function fetchIssues(org: string, repo: string): Promise<Issue[]> {
+  try {
+    const res = await fetch(`${API}/api/repos/${org}/${repo}/issues`, { cache: 'no-store' })
+    if (!res.ok) return []
+    return await res.json()
+  } catch { return [] }
+}
 
 const statusCfg = {
   open:      { label: 'Open',      cls: 'badge-blue' },
@@ -50,7 +62,16 @@ const labelCfg: Record<string, string> = {
   P1: 'badge-red', P2: 'badge-yellow',
 }
 
-export default function RepoDetail() {
+export default async function RepoDetail({
+  searchParams,
+}: {
+  searchParams: { org?: string; repo?: string }
+}) {
+  const org = searchParams.org ?? 'anthropic'
+  const repo = searchParams.repo ?? 'claude-tools'
+
+  const [repoData, issues] = await Promise.all([fetchRepo(org, repo), fetchIssues(org, repo)])
+
   const openIssues = issues.filter(i => i.status !== 'completed')
   const totalValue = openIssues.reduce((a, i) => a + i.salary, 0)
   const activeDev = new Set(issues.flatMap(i => i.devInitials)).size
@@ -103,9 +124,9 @@ export default function RepoDetail() {
             Browse
           </Link>
           <span style={{ color: 'var(--border-light)', fontSize: '0.8rem' }}>/</span>
-          <span style={{ fontSize: '0.78rem', color: 'var(--text-2)' }}>Anthropic</span>
+          <span style={{ fontSize: '0.78rem', color: 'var(--text-2)' }}>{repoData?.org ?? org}</span>
           <span style={{ color: 'var(--border-light)', fontSize: '0.8rem' }}>/</span>
-          <span style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-1)' }}>claude-tools</span>
+          <span style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-1)' }}>{repoData?.name ?? repo}</span>
           <div style={{ marginLeft: 'auto', position: 'relative' }}>
             <svg style={{ position: 'absolute', left: '0.625rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-3)' }} width="13" height="13" viewBox="0 0 13 13" fill="none">
               <circle cx="5.5" cy="5.5" r="4" stroke="currentColor" strokeWidth="1.2"/>
@@ -122,48 +143,50 @@ export default function RepoDetail() {
         <div style={{ padding: '1.75rem 2rem' }}>
 
           {/* Repo header */}
-          <div className="anim-fade-up" style={{ display: 'flex', alignItems: 'flex-start', gap: '1rem', marginBottom: '1.5rem' }}>
-            <div style={{ width: 48, height: 48, borderRadius: 10, background: '#CC785C18', border: '1px solid #CC785C33', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-              <span style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: '1.2rem', color: '#CC785C' }}>A</span>
-            </div>
-            <div style={{ flex: 1 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', marginBottom: '0.375rem' }}>
-                <h1 style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: '1.375rem', color: 'var(--text-1)' }}>
-                  anthropic / claude-tools
-                </h1>
-                <span className="badge badge-muted" style={{ fontSize: '0.62rem' }}>public</span>
-                <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.78rem', color: 'var(--text-3)' }}>
-                  <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><path d="M6 1L7.5 4.3l3.5.5-2.5 2.5.6 3.5L6 9.3l-3.1 1.5.6-3.5L1 4.8l3.5-.5L6 1z"/></svg>
-                  3,210
-                </span>
+          {repoData && (
+            <div className="anim-fade-up" style={{ display: 'flex', alignItems: 'flex-start', gap: '1rem', marginBottom: '1.5rem' }}>
+              <div style={{ width: 48, height: 48, borderRadius: 10, background: repoData.orgColor + '18', border: `1px solid ${repoData.orgColor}33`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <span style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: '1.2rem', color: repoData.orgColor }}>{repoData.orgInitial}</span>
               </div>
-              <p style={{ fontSize: '0.85rem', color: 'var(--text-2)', lineHeight: 1.5, maxWidth: 560, marginBottom: '0.75rem' }}>
-                Utility library for building Claude-powered applications. SDK and tooling issues.
-              </p>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.75rem', color: 'var(--text-3)' }}>
-                  <span className="lang-dot lang-ts" />TypeScript
-                </span>
-                <span className="badge badge-muted" style={{ fontSize: '0.62rem' }}>ai</span>
-                <span className="badge badge-muted" style={{ fontSize: '0.62rem' }}>sdk</span>
-                <span className="badge badge-muted" style={{ fontSize: '0.62rem' }}>llm</span>
+              <div style={{ flex: 1 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', marginBottom: '0.375rem' }}>
+                  <h1 style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: '1.375rem', color: 'var(--text-1)' }}>
+                    {repoData.fullName}
+                  </h1>
+                  <span className="badge badge-muted" style={{ fontSize: '0.62rem' }}>public</span>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.78rem', color: 'var(--text-3)' }}>
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><path d="M6 1L7.5 4.3l3.5.5-2.5 2.5.6 3.5L6 9.3l-3.1 1.5.6-3.5L1 4.8l3.5-.5L6 1z"/></svg>
+                    {repoData.stars.toLocaleString()}
+                  </span>
+                </div>
+                <p style={{ fontSize: '0.85rem', color: 'var(--text-2)', lineHeight: 1.5, maxWidth: 560, marginBottom: '0.75rem' }}>
+                  {repoData.description}
+                </p>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.75rem', color: 'var(--text-3)' }}>
+                    <span className={`lang-dot ${repoData.langDot}`} />{repoData.lang}
+                  </span>
+                  {repoData.tags.map(tag => (
+                    <span key={tag} className="badge badge-muted" style={{ fontSize: '0.62rem' }}>{tag}</span>
+                  ))}
+                </div>
               </div>
+              <a
+                href="#"
+                style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem', color: 'var(--text-2)', textDecoration: 'none', background: 'var(--bg-3)', border: '1px solid var(--border)', borderRadius: 6, padding: '0.4rem 0.75rem' }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.477 2 12c0 4.418 2.865 8.168 6.839 9.489.5.09.682-.217.682-.483 0-.237-.009-.866-.013-1.7-2.782.603-3.369-1.342-3.369-1.342-.454-1.155-1.11-1.462-1.11-1.462-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.578 9.578 0 0112 6.836c.85.004 1.705.115 2.504.337 1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.202 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.578.688.48C19.138 20.165 22 16.418 22 12c0-5.523-4.477-10-10-10z"/></svg>
+                View on GitHub
+              </a>
             </div>
-            <a
-              href="#"
-              style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem', color: 'var(--text-2)', textDecoration: 'none', background: 'var(--bg-3)', border: '1px solid var(--border)', borderRadius: 6, padding: '0.4rem 0.75rem' }}
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.477 2 12c0 4.418 2.865 8.168 6.839 9.489.5.09.682-.217.682-.483 0-.237-.009-.866-.013-1.7-2.782.603-3.369-1.342-3.369-1.342-.454-1.155-1.11-1.462-1.11-1.462-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.578 9.578 0 0112 6.836c.85.004 1.705.115 2.504.337 1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.202 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.578.688.48C19.138 20.165 22 16.418 22 12c0-5.523-4.477-10-10-10z"/></svg>
-              View on GitHub
-            </a>
-          </div>
+          )}
 
           {/* Stats strip */}
           <div className="anim-fade-up d2" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.875rem', marginBottom: '1.5rem' }}>
             {[
               { label: 'Open issues', value: openIssues.length, color: 'var(--blue)' },
               { label: 'Total value', value: `$${totalValue.toLocaleString()}`, color: 'var(--green)' },
-              { label: 'Avg salary', value: `$${Math.round(totalValue / openIssues.length)}`, color: 'var(--text-1)' },
+              { label: 'Avg salary', value: openIssues.length ? `$${Math.round(totalValue / openIssues.length)}` : '$0', color: 'var(--text-1)' },
               { label: 'Active devs', value: activeDev, color: 'var(--orange)' },
             ].map(s => (
               <div key={s.label} className="stat-box">

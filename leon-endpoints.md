@@ -78,6 +78,92 @@ Returns the authenticated company's profile.
 
 ---
 
+## Repos Marketplace
+
+### `GET /api/repos`
+Returns all repos listed on the marketplace.
+
+**Response:**
+```json
+[
+  {
+    "org": "Anthropic",
+    "orgInitial": "A",
+    "orgColor": "#CC785C",
+    "name": "claude-tools",
+    "description": "Utility library for building Claude-powered applications.",
+    "lang": "TypeScript",
+    "langDot": "lang-ts",
+    "issues": 12,
+    "totalValue": 4850,
+    "avgSalary": 404,
+    "devs": 9,
+    "stars": 3210,
+    "tags": ["ai", "sdk", "bug"]
+  }
+]
+```
+
+---
+
+### `GET /api/repos/stats`
+Returns aggregate marketplace stats.
+
+**Response:**
+```json
+{
+  "totalIssues": 99,
+  "totalValue": 43460,
+  "activeDevs": 87
+}
+```
+
+---
+
+### `GET /api/repos/:org/:repo`
+Returns detail for a single repo.
+
+**Response:**
+```json
+{
+  "org": "Anthropic",
+  "orgInitial": "A",
+  "orgColor": "#CC785C",
+  "name": "claude-tools",
+  "fullName": "anthropic / claude-tools",
+  "description": "Utility library for building Claude-powered applications.",
+  "lang": "TypeScript",
+  "langDot": "lang-ts",
+  "stars": 3210,
+  "tags": ["ai", "sdk", "llm"]
+}
+```
+
+---
+
+### `GET /api/repos/:org/:repo/issues`
+Returns issues for a specific repo.
+
+**Response:**
+```json
+[
+  {
+    "id": "384",
+    "title": "Fix race condition in streaming response handler",
+    "status": "open | claimed | in_review | completed",
+    "labels": ["bug", "P1"],
+    "salary": 450,
+    "devs": 2,
+    "devInitials": ["JK", "LM"],
+    "devColors": ["#3B82F6", "#8B5CF6"],
+    "comments": 7,
+    "updated": "12m ago"
+  }
+]
+```
+
+---
+
 ## Developer
 
 ### `GET /api/developer/issues`

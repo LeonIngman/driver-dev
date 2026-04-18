@@ -1,5 +1,7 @@
 import Link from 'next/link'
 
+const API = process.env.API_URL ?? 'http://localhost:3001'
+
 const Logo = () => (
   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
     <div style={{ width: 26, height: 26, background: 'var(--blue)', borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -37,71 +39,33 @@ type Repo = {
   tags: string[]
 }
 
-const repos: Repo[] = [
-  {
-    org: 'Vercel', orgInitial: 'V', orgColor: '#FFFFFF',
-    name: 'next.js', description: 'The React Framework for the Web. Bug fixes and performance improvements welcome.',
-    lang: 'TypeScript', langDot: 'lang-ts',
-    issues: 18, totalValue: 7420, avgSalary: 412, devs: 14, stars: 128400,
-    tags: ['performance', 'bug', 'dx'],
-  },
-  {
-    org: 'Anthropic', orgInitial: 'A', orgColor: '#CC785C',
-    name: 'claude-tools', description: 'Utility library for building Claude-powered applications. SDK and tooling issues.',
-    lang: 'TypeScript', langDot: 'lang-ts',
-    issues: 12, totalValue: 4850, avgSalary: 404, devs: 9, stars: 3210,
-    tags: ['ai', 'sdk', 'bug'],
-  },
-  {
-    org: 'Linear', orgInitial: 'L', orgColor: '#5E6AD2',
-    name: 'linear-app', description: 'Issue tracking for modern product teams. UI and workflow automation fixes.',
-    lang: 'TypeScript', langDot: 'lang-ts',
-    issues: 9, totalValue: 3600, avgSalary: 400, devs: 7, stars: 4100,
-    tags: ['ui', 'enhancement', 'accessibility'],
-  },
-  {
-    org: 'Stripe', orgInitial: 'S', orgColor: '#635BFF',
-    name: 'stripe-node', description: 'Node.js library for the Stripe API. Reliability and type safety improvements.',
-    lang: 'TypeScript', langDot: 'lang-ts',
-    issues: 15, totalValue: 9750, avgSalary: 650, devs: 11, stars: 8900,
-    tags: ['payments', 'reliability', 'types'],
-  },
-  {
-    org: 'PlanetScale', orgInitial: 'P', orgColor: '#F97316',
-    name: 'database-js', description: 'Serverless driver for PlanetScale MySQL. Edge runtime and connection handling.',
-    lang: 'TypeScript', langDot: 'lang-ts',
-    issues: 7, totalValue: 2240, avgSalary: 320, devs: 5, stars: 1240,
-    tags: ['database', 'edge', 'bug'],
-  },
-  {
-    org: 'Resend', orgInitial: 'R', orgColor: '#34D399',
-    name: 'resend-node', description: 'Email API for developers. Webhook handling and template improvements.',
-    lang: 'TypeScript', langDot: 'lang-ts',
-    issues: 5, totalValue: 1500, avgSalary: 300, devs: 4, stars: 890,
-    tags: ['email', 'webhooks'],
-  },
-  {
-    org: 'Supabase', orgInitial: 'S', orgColor: '#3ECF8E',
-    name: 'supabase-js', description: 'Open source Firebase alternative. Realtime subscriptions and RLS helpers.',
-    lang: 'TypeScript', langDot: 'lang-ts',
-    issues: 22, totalValue: 8800, avgSalary: 400, devs: 18, stars: 21400,
-    tags: ['database', 'realtime', 'auth'],
-  },
-  {
-    org: 'Turborepo', orgInitial: 'T', orgColor: '#EF4444',
-    name: 'turborepo', description: 'High-performance build system for JavaScript/TypeScript monorepos.',
-    lang: 'Go', langDot: 'lang-go',
-    issues: 11, totalValue: 5500, avgSalary: 500, devs: 8, stars: 27800,
-    tags: ['build', 'performance', 'dx'],
-  },
-]
+type Stats = {
+  totalIssues: number
+  totalValue: number
+  activeDevs: number
+}
+
+async function fetchRepos(): Promise<Repo[]> {
+  try {
+    const res = await fetch(`${API}/api/repos`, { cache: 'no-store' })
+    if (!res.ok) return []
+    return await res.json()
+  } catch { return [] }
+}
+
+async function fetchStats(): Promise<Stats> {
+  try {
+    const res = await fetch(`${API}/api/repos/stats`, { cache: 'no-store' })
+    if (!res.ok) return { totalIssues: 0, totalValue: 0, activeDevs: 0 }
+    return await res.json()
+  } catch { return { totalIssues: 0, totalValue: 0, activeDevs: 0 } }
+}
 
 const sortOptions = ['Most issues', 'Highest salary', 'Most active', 'Newest']
 const filterTags = ['All', 'TypeScript', 'Go', 'Python', 'Rust', 'bug', 'performance', 'ui']
 
-export default function ReposMarketplace() {
-  const totalIssues = repos.reduce((a, r) => a + r.issues, 0)
-  const totalValue = repos.reduce((a, r) => a + r.totalValue, 0)
+export default async function ReposMarketplace() {
+  const [repos, stats] = await Promise.all([fetchRepos(), fetchStats()])
 
   return (
     <div className="dashboard">
@@ -195,9 +159,9 @@ export default function ReposMarketplace() {
           <div className="anim-fade-up" style={{ display: 'flex', gap: '1rem', marginBottom: '1.75rem' }}>
             {[
               { label: 'Repos available', value: repos.length, color: 'var(--blue)' },
-              { label: 'Open issues', value: totalIssues, color: 'var(--text-1)' },
-              { label: 'Total value', value: `$${totalValue.toLocaleString()}`, color: 'var(--green)' },
-              { label: 'Active developers', value: 87, color: 'var(--orange)' },
+              { label: 'Open issues', value: stats.totalIssues, color: 'var(--text-1)' },
+              { label: 'Total value', value: `$${stats.totalValue.toLocaleString()}`, color: 'var(--green)' },
+              { label: 'Active developers', value: stats.activeDevs, color: 'var(--orange)' },
             ].map(s => (
               <div key={s.label} style={{ flex: 1, background: 'var(--bg-2)', border: '1px solid var(--border)', borderRadius: 8, padding: '0.875rem 1rem' }}>
                 <div style={{ fontSize: '0.68rem', color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, marginBottom: '0.375rem' }}>{s.label}</div>
