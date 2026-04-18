@@ -140,14 +140,25 @@ app.get('/auth/github/callback', async (c) => {
     account: { login: string; type: string }
   }
 
+  let orgEmail: string | null = null
+  if (installation.account.type === 'Organization') {
+    const orgRes = await fetch(`https://api.github.com/orgs/${installation.account.login}`, {
+      headers: { Authorization: `Bearer ${appJwt}`, Accept: 'application/vnd.github+json' },
+    })
+    const orgData = await orgRes.json() as { email?: string | null }
+    orgEmail = orgData.email ?? null
+  }
+
   const [company] = await sql`
-    INSERT INTO companies (org_name, github_id)
-    VALUES (${installation.account.login}, ${String(installation.id)})
-    ON CONFLICT (github_id) DO UPDATE SET org_name = EXCLUDED.org_name
+    INSERT INTO companies (org_name, email, github_id)
+    VALUES (${installation.account.login}, ${orgEmail}, ${String(installation.id)})
+    ON CONFLICT (github_id) DO UPDATE SET
+      org_name = EXCLUDED.org_name,
+      email = EXCLUDED.email
     RETURNING id
   `
 
-  console.log(`[companies] GitHub install persisted: id=${company.id} org=${installation.account.login}`)
+  console.log(`[companies] GitHub install persisted: id=${company.id} org=${installation.account.login} email=${orgEmail}`)
 
   await sql`
     INSERT INTO github_installations (installation_id, account_login, account_type, company_id)
