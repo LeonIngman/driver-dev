@@ -37,6 +37,18 @@ export async function getUser(token: string) {
   return res.json()
 }
 
+/** Get the primary verified email for the authenticated user */
+export async function getUserPrimaryEmail(token: string): Promise<string | null> {
+  const res = await fetch(`${GITHUB_API}/user/emails`, {
+    headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json' },
+  })
+  const data = await res.json()
+  if (!Array.isArray(data)) return null
+  const emails = data as Array<{ email: string; primary: boolean; verified: boolean }>
+  const primary = emails.find(e => e.primary && e.verified)
+  return primary?.email ?? emails[0]?.email ?? null
+}
+
 /** List installations accessible to the authenticated user */
 export async function getUserInstallations(token: string) {
   const res = await fetch(`${GITHUB_API}/user/installations`, {

@@ -6,6 +6,7 @@ import {
   createAppJwt,
   exchangeCodeForToken,
   getUser,
+  getUserPrimaryEmail,
   getInstallationRepos,
   getRepoIssues,
 } from './github.js'
@@ -26,28 +27,27 @@ app.get('/', async (c) => {
 
   if (code && state === 'developer') {
     const { access_token } = await exchangeCodeForToken(code)
-    const ghUser = await getUser(access_token) as {
-      id: number
-      login: string
-      email: string | null
-      name: string | null
-    }
+    const [ghUser, primaryEmail] = await Promise.all([
+      getUser(access_token) as Promise<{ id: number; login: string; email: string | null; name: string | null }>,
+      getUserPrimaryEmail(access_token),
+    ])
+    const email = ghUser.email ?? primaryEmail ?? ''
 
     const [dev] = await sql`
       INSERT INTO developers (github_id, username, email, first_name, last_name)
       VALUES (
         ${String(ghUser.id)},
         ${ghUser.login},
-        ${ghUser.email ?? ''},
+        ${email},
         ${ghUser.name?.split(' ')[0] ?? ghUser.login},
         ${ghUser.name?.split(' ').slice(1).join(' ') ?? ''}
       )
       ON CONFLICT (github_id) DO UPDATE SET
-        username = EXCLUDED.username
+        username = EXCLUDED.username,
+        email = CASE WHEN developers.email = '' THEN EXCLUDED.email ELSE developers.email END
       RETURNING id, anthropic_api_key
     `
 
-    // If they already have an API key (returning user), go straight to the app
     if (dev.anthropic_api_key) {
       return c.redirect(`${frontendUrl}/repos`)
     }
@@ -97,24 +97,24 @@ app.get('/auth/github/callback', async (c) => {
   // ── Developer OAuth ──────────────────────────────────────
   if (code && state === 'developer') {
     const { access_token } = await exchangeCodeForToken(code)
-    const ghUser = await getUser(access_token) as {
-      id: number
-      login: string
-      email: string | null
-      name: string | null
-    }
+    const [ghUser, primaryEmail] = await Promise.all([
+      getUser(access_token) as Promise<{ id: number; login: string; email: string | null; name: string | null }>,
+      getUserPrimaryEmail(access_token),
+    ])
+    const email = ghUser.email ?? primaryEmail ?? ''
 
     const [dev] = await sql`
       INSERT INTO developers (github_id, username, email, first_name, last_name)
       VALUES (
         ${String(ghUser.id)},
         ${ghUser.login},
-        ${ghUser.email ?? ''},
+        ${email},
         ${ghUser.name?.split(' ')[0] ?? ghUser.login},
         ${ghUser.name?.split(' ').slice(1).join(' ') ?? ''}
       )
       ON CONFLICT (github_id) DO UPDATE SET
-        username = EXCLUDED.username
+        username = EXCLUDED.username,
+        email = CASE WHEN developers.email = '' THEN EXCLUDED.email ELSE developers.email END
       RETURNING id, anthropic_api_key
     `
 
