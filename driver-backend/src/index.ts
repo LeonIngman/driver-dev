@@ -1290,5 +1290,101 @@ app.get('/api/company/issues', requireCompany, async (c) => {
   return c.json({ issues, total: issues.length })
 })
 
+<<<<<<< HEAD
+=======
+/** Repos for the filter dropdown */
+app.get('/api/company/repos', async (c) => {
+  const rows = await sql`SELECT DISTINCT repo_full_name FROM connected_repos`
+  return c.json(rows.map((r) => ({
+    name: (r.repo_full_name as string).split('/')[1] ?? r.repo_full_name,
+    full: r.repo_full_name,
+  })))
+})
+
+/** Company profile for the topbar */
+app.get('/api/company/profile', async (c) => {
+  const [company] = await sql`SELECT org_name, plan FROM companies LIMIT 1`
+  if (company) {
+    return c.json({
+      name:     company.org_name,
+      initials: (company.org_name as string).slice(0, 2).toUpperCase(),
+      plan:     company.plan,
+    })
+  }
+  const [inst] = await sql`SELECT account_login FROM github_installations LIMIT 1`
+  if (inst) {
+    return c.json({
+      name:     inst.account_login,
+      initials: (inst.account_login as string).slice(0, 2).toUpperCase(),
+      plan:     'Free',
+    })
+  }
+  return c.json({ name: '—', initials: '?', plan: '—' })
+})
+
+/** GitHub webhook handler */
+app.post('/api/webhooks/github', async (c) => {
+  const secret = process.env.GITHUB_WEBHOOK_SECRET
+  if (secret) {
+    const sig = c.req.header('x-hub-signature-256')
+    if (!sig) return c.json({ error: 'Missing signature' }, 401)
+
+    const body = await c.req.text()
+    const encoder = new TextEncoder()
+    const key = await crypto.subtle.importKey(
+      'raw', encoder.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
+    )
+    const mac = await crypto.subtle.sign('HMAC', key, encoder.encode(body))
+    const expected = 'sha256=' + Array.from(new Uint8Array(mac)).map(b => b.toString(16).padStart(2, '0')).join('')
+    if (sig !== expected) return c.json({ error: 'Invalid signature' }, 401)
+
+    const event = c.req.header('x-github-event')
+    const payload = JSON.parse(body)
+    await handleGithubEvent(event ?? '', payload)
+    return c.json({ ok: true })
+  }
+
+  const event = c.req.header('x-github-event')
+  const payload = await c.req.json()
+  await handleGithubEvent(event ?? '', payload)
+  return c.json({ ok: true })
+})
+
+async function handleGithubEvent(event: string, payload: Record<string, unknown>) {
+  const repoFullName = (payload.repository as { full_name: string } | undefined)?.full_name
+  if (!repoFullName) return
+
+  // PR merged → close the linked issue
+  if (event === 'pull_request' && payload.action === 'closed') {
+    const pr = payload.pull_request as { merged: boolean; body: string | null; number: number } | undefined
+    if (!pr?.merged) return
+
+    // Parse "Fixes #N" / "Closes #N" from PR body
+    const issueNumbers: number[] = []
+    const body = pr.body ?? ''
+    for (const match of body.matchAll(/(?:fixes|closes|resolves)\s+#(\d+)/gi)) {
+      issueNumbers.push(Number(match[1]))
+    }
+
+    for (const num of issueNumbers) {
+      await sql`
+        UPDATE issues SET status = 'closed', updated_at = NOW()
+        WHERE repo_full_name = ${repoFullName} AND issue_number = ${num}
+      `
+    }
+  }
+
+  // Issue closed directly on GitHub
+  if (event === 'issues' && payload.action === 'closed') {
+    const issue = payload.issue as { number: number } | undefined
+    if (!issue) return
+    await sql`
+      UPDATE issues SET status = 'closed', updated_at = NOW()
+      WHERE repo_full_name = ${repoFullName} AND issue_number = ${issue.number}
+    `
+  }
+}
+
+>>>>>>> cba2634 (feat: close issues via GitHub webhooks on PR merge or direct close)
 export const handler = handle(app)
 export default app
