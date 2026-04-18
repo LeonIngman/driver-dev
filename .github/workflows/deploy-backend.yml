@@ -58,16 +58,26 @@ jobs:
             --function-name ${{ secrets.LAMBDA_FUNCTION_NAME }}
 
       - name: Update Lambda environment variables
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          GH_APP_ID: ${{ secrets.GH_APP_ID }}
+          GH_APP_PRIVATE_KEY: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          GH_CLIENT_ID: ${{ secrets.GH_CLIENT_ID }}
+          GH_CLIENT_SECRET: ${{ secrets.GH_CLIENT_SECRET }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          E2B_API_KEY: ${{ secrets.E2B_API_KEY }}
         run: |
+          ENV_JSON=$(jq -n \
+            --arg db "$DATABASE_URL" \
+            --arg app_id "$GH_APP_ID" \
+            --arg pk "$GH_APP_PRIVATE_KEY" \
+            --arg client_id "$GH_CLIENT_ID" \
+            --arg client_secret "$GH_CLIENT_SECRET" \
+            --arg jwt "$JWT_SECRET" \
+            --arg anthropic "$ANTHROPIC_API_KEY" \
+            --arg e2b "$E2B_API_KEY" \
+            '{"Variables":{"DATABASE_URL":$db,"GITHUB_APP_ID":$app_id,"GITHUB_APP_PRIVATE_KEY":$pk,"GITHUB_CLIENT_ID":$client_id,"GITHUB_CLIENT_SECRET":$client_secret,"JWT_SECRET":$jwt,"ANTHROPIC_API_KEY":$anthropic,"E2B_API_KEY":$e2b}}')
           aws lambda update-function-configuration \
             --function-name ${{ secrets.LAMBDA_FUNCTION_NAME }} \
-            --environment "Variables={
-              DATABASE_URL=${{ secrets.DATABASE_URL }},
-              GITHUB_APP_ID=${{ secrets.GH_APP_ID }},
-              GITHUB_APP_PRIVATE_KEY=${{ secrets.GH_APP_PRIVATE_KEY }},
-              GITHUB_CLIENT_ID=${{ secrets.GH_CLIENT_ID }},
-              GITHUB_CLIENT_SECRET=${{ secrets.GH_CLIENT_SECRET }},
-              JWT_SECRET=${{ secrets.JWT_SECRET }},
-              ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }},
-              E2B_API_KEY=${{ secrets.E2B_API_KEY }}
-            }"
+            --environment "$ENV_JSON"
