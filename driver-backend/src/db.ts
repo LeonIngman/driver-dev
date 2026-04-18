@@ -1,6 +1,6 @@
-import postgres from 'postgres'
+import postgres from "postgres";
 
-export const sql = postgres(process.env.DATABASE_URL!)
+export const sql = postgres(process.env.DATABASE_URL!);
 
 /** Run once at startup to ensure tables exist */
 export async function initDb() {
@@ -14,7 +14,7 @@ export async function initDb() {
       plan TEXT NOT NULL DEFAULT 'Free',
       created_at TIMESTAMPTZ DEFAULT NOW()
     )
-  `
+  `;
 
   await sql`
     CREATE TABLE IF NOT EXISTS github_installations (
@@ -25,7 +25,7 @@ export async function initDb() {
       company_id UUID REFERENCES companies(id),
       created_at TIMESTAMPTZ DEFAULT NOW()
     )
-  `
+  `;
 
   await sql`
     CREATE TABLE IF NOT EXISTS connected_repos (
@@ -37,7 +37,7 @@ export async function initDb() {
       connected_at TIMESTAMPTZ DEFAULT NOW(),
       UNIQUE(installation_id, repo_id)
     )
-  `
+  `;
 
   await sql`
     CREATE TABLE IF NOT EXISTS configured_issues (
@@ -51,7 +51,7 @@ export async function initDb() {
       created_at TIMESTAMPTZ DEFAULT NOW(),
       UNIQUE(installation_id, repo_full_name, issue_number)
     )
-  `
+  `;
 
   await sql`
     CREATE TABLE IF NOT EXISTS developers (
@@ -66,7 +66,7 @@ export async function initDb() {
       preferred_model TEXT NOT NULL DEFAULT 'claude-opus-4-6',
       created_at TIMESTAMPTZ DEFAULT NOW()
     )
-  `
+  `;
 
   await sql`
     CREATE TABLE IF NOT EXISTS issues (
@@ -82,5 +82,18 @@ export async function initDb() {
       created_at TIMESTAMPTZ DEFAULT NOW(),
       UNIQUE(installation_id, repo_full_name, issue_number)
     )
-  `
+  `;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS developer_issues (
+      id SERIAL PRIMARY KEY,
+      developer_id UUID NOT NULL REFERENCES developers(id),
+      configured_issue_id INTEGER NOT NULL REFERENCES configured_issues(id),
+      status TEXT NOT NULL DEFAULT 'claimed' CHECK (status IN ('claimed','submitted','completed')),
+      claimed_at TIMESTAMPTZ DEFAULT NOW(),
+      submitted_at TIMESTAMPTZ,
+      completed_at TIMESTAMPTZ,
+      UNIQUE(developer_id, configured_issue_id)
+    )
+  `;
 }
