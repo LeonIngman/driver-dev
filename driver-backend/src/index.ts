@@ -749,6 +749,7 @@ app.post('/api/sessions/:id/submit', async (c) => {
   )
 
   await sql`UPDATE sessions SET status = 'submitted' WHERE id = ${id}`
+  await sql`UPDATE issues SET status = 'in_review' WHERE repo_full_name = ${repoFullName} AND issue_number = ${session.issue_number}`
 
   return c.json({ pr_url: pr.html_url, pr_number: pr.number })
 })
