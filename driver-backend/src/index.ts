@@ -18,15 +18,27 @@ import {
   commitFile,
   createPullRequest,
 } from './github.js'
+import { signToken } from './jwt.js'
+import { requireDeveloper, requireCompany, type AppEnv } from './middleware.js'
 import developers from './developers.js'
 import companies from './companies.js'
 
-const app = new Hono()
+const app = new Hono<AppEnv>()
 
-app.use('*', cors())
+app.use('*', cors({
+  origin: process.env.FRONTEND_URL ?? 'http://localhost:3000',
+  credentials: true,
+}))
 
 // Initialize DB tables on startup
 initDb().catch(console.error)
+
+const TOKEN_COOKIE_OPTS = {
+  path: '/',
+  httpOnly: true,
+  sameSite: 'Lax' as const,
+  maxAge: 60 * 60 * 24 * 90,
+}
 
 /** Root — also handles GitHub OAuth callback when redirect_uri points here */
 app.get('/', async (c) => {
@@ -57,15 +69,10 @@ app.get('/', async (c) => {
       RETURNING id, anthropic_api_key
     `
 
-    setCookie(c, 'developer_id', String(dev.id), {
-      path: '/',
-      httpOnly: false,
-      sameSite: 'Lax',
-      maxAge: 60 * 60 * 24 * 90,
-    })
+    setCookie(c, 'token', signToken({ sub: dev.id, role: 'developer' }), TOKEN_COOKIE_OPTS)
 
     if (dev.anthropic_api_key) {
-      return c.redirect(`${frontendUrl}/repos`)
+      return c.redirect(`${frontendUrl}/developer/repos`)
     }
 
     return c.redirect(`${frontendUrl}/developer/onboarding?id=${dev.id}`)
@@ -135,15 +142,10 @@ app.get('/auth/github/callback', async (c) => {
       RETURNING id, anthropic_api_key
     `
 
-    setCookie(c, 'developer_id', String(dev.id), {
-      path: '/',
-      httpOnly: false,
-      sameSite: 'Lax',
-      maxAge: 60 * 60 * 24 * 90,
-    })
+    setCookie(c, 'token', signToken({ sub: dev.id, role: 'developer' }), TOKEN_COOKIE_OPTS)
 
     if (dev.anthropic_api_key) {
-      return c.redirect(`${frontendUrl}/repos`)
+      return c.redirect(`${frontendUrl}/developer/repos`)
     }
 
     return c.redirect(`${frontendUrl}/developer/onboarding?id=${dev.id}`)
@@ -189,6 +191,8 @@ app.get('/auth/github/callback', async (c) => {
       account_login = EXCLUDED.account_login,
       company_id = EXCLUDED.company_id
   `
+
+  setCookie(c, 'token', signToken({ sub: company.id, role: 'company' }), TOKEN_COOKIE_OPTS)
 
   return c.redirect(`${frontendUrl}/company/connect-repo?installation_id=${installationId}`)
 })
@@ -363,19 +367,19 @@ app.get('/api/repos/:org/:repo/issues', async (c) => {
 // ─── Sessions API ──────────────────────────────────────────
 
 /** Create a session for a developer starting work on an issue */
-app.post('/api/sessions', async (c) => {
-  const { org, repo, issueNumber, developerId } = await c.req.json<{
+app.post('/api/sessions', requireDeveloper, async (c) => {
+  const { org, repo, issueNumber } = await c.req.json<{
     org: string
     repo: string
     issueNumber: number
-    developerId?: string
   }>()
 
   const fullName = `${org}/${repo}`
+  const developerId = c.get('user').sub
 
   const [session] = await sql`
     INSERT INTO sessions (repo_full_name, issue_number, developer_id)
-    VALUES (${fullName}, ${issueNumber}, ${developerId ?? null})
+    VALUES (${fullName}, ${issueNumber}, ${developerId})
     RETURNING id
   `
 
@@ -609,7 +613,7 @@ app.post('/api/sessions/:id/submit', async (c) => {
 })
 
 /** Connect (save) a repo */
-app.post('/api/repos/connect', async (c) => {
+app.post('/api/repos/connect', requireCompany, async (c) => {
   const { installation_id, repo_id, repo_full_name, private: isPrivate } =
     await c.req.json<{
       installation_id: number
@@ -629,7 +633,7 @@ app.post('/api/repos/connect', async (c) => {
 })
 
 /** Disconnect a repo */
-app.delete('/api/repos/connect', async (c) => {
+app.delete('/api/repos/connect', requireCompany, async (c) => {
   const { installation_id, repo_id } =
     await c.req.json<{ installation_id: number; repo_id: number }>()
 
@@ -642,7 +646,7 @@ app.delete('/api/repos/connect', async (c) => {
 })
 
 /** List connected repos for an installation */
-app.get('/api/repos/connected', async (c) => {
+app.get('/api/repos/connected', requireCompany, async (c) => {
   const installationId = Number(c.req.query('installation_id'))
   if (!installationId) return c.json({ error: 'installation_id required' }, 400)
 
@@ -658,48 +662,42 @@ app.get('/api/installations', async (c) => {
   return c.json({ installations: rows })
 })
 
-// ─── Company Profile API ─────────────────────────────
+// ─── Company Profile API ──────────────────────────────────
 
 function toSlug(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
 }
 
-/** Company profile — data for the logged-in company */
-app.get('/api/company/profile', async (c) => {
-  // TODO: use auth — for now, grab the first company
-  const [company] = await sql`SELECT * FROM companies ORDER BY created_at ASC LIMIT 1`
+function getCompanyInitials(orgName: string): string {
+  return orgName.split(/\s+/).map((w: string) => w[0]).join('').toUpperCase().slice(0, 2) || '?'
+}
+
+/** Private company profile — data for the logged-in company */
+app.get('/api/company/profile', requireCompany, async (c) => {
+  const companyId = c.get('user').sub
+  const [company] = await sql`SELECT * FROM companies WHERE id = ${companyId}`
 
   if (!company) {
     return c.json({ name: '—', initials: '?', plan: '—', slug: '' })
   }
 
-  const slug = toSlug(company.org_name)
-  const initials = company.org_name
-    .split(/\s+/)
-    .map((w: string) => w[0])
-    .join('')
-    .toUpperCase()
-    .slice(0, 2) || '?'
-
   return c.json({
-    name: company.org_name,
-    initials,
-    plan: company.plan,
-    slug,
+    name:     company.org_name,
+    initials: getCompanyInitials(company.org_name),
+    plan:     company.plan,
+    slug:     toSlug(company.org_name),
   })
 })
 
-/** Company repos for sidebar */
-app.get('/api/company/repos', async (c) => {
-  // TODO: use auth — for now, grab repos from the first company's installation
-  const [company] = await sql`SELECT * FROM companies ORDER BY created_at ASC LIMIT 1`
-  if (!company) return c.json([])
+/** Company sidebar repos */
+app.get('/api/company/repos', requireCompany, async (c) => {
+  const companyId = c.get('user').sub
 
   const repos = await sql`
     SELECT cr.repo_full_name
     FROM connected_repos cr
     JOIN github_installations gi ON gi.installation_id = cr.installation_id
-    WHERE gi.company_id = ${company.id}
+    WHERE gi.company_id = ${companyId}
   `
 
   return c.json(repos.map((r: any) => ({
@@ -716,13 +714,6 @@ app.get('/api/company/profile/:slug', async (c) => {
   const company = companies_list.find((co: any) => toSlug(co.org_name) === slug)
 
   if (!company) return c.json({ error: 'Company not found' }, 404)
-
-  const initials = company.org_name
-    .split(/\s+/)
-    .map((w: string) => w[0])
-    .join('')
-    .toUpperCase()
-    .slice(0, 2) || '?'
 
   const repos = await sql`
     SELECT cr.repo_full_name, COUNT(i.id) AS issue_count
@@ -748,12 +739,10 @@ app.get('/api/company/profile/:slug', async (c) => {
     WHERE gi.company_id = ${company.id}
   `
 
-  // GitHub org name from installation
   const [installation] = await sql`
     SELECT account_login FROM github_installations WHERE company_id = ${company.id} LIMIT 1
   `
 
-  // Recent issue activity
   const recentActivity = await sql`
     SELECT di.status, i.title, i.repo_full_name AS repo, i.salary,
            COALESCE(di.completed_at, di.submitted_at, di.claimed_at) AS date,
@@ -769,36 +758,36 @@ app.get('/api/company/profile/:slug', async (c) => {
   `
 
   return c.json({
-    name: company.org_name,
+    name:         company.org_name,
     slug,
-    initials,
-    plan: company.plan,
-    email: company.email ?? null,
-    githubOrg: installation?.account_login ?? null,
-    memberSince: company.created_at,
+    initials:     getCompanyInitials(company.org_name),
+    plan:         company.plan,
+    email:        company.email ?? null,
+    githubOrg:    installation?.account_login ?? null,
+    memberSince:  company.created_at,
     repos: repos.map((r: any) => ({
-      name: r.repo_full_name.split('/').pop(),
-      full: r.repo_full_name,
+      name:       r.repo_full_name.split('/').pop(),
+      full:       r.repo_full_name,
       issueCount: Number(r.issue_count),
     })),
     stats: {
       totalIssues: Number(stats.total_issues),
-      openIssues: Number(stats.open_issues),
-      activeDevs: Number(stats.active_devs),
-      totalPaid: Number(stats.total_paid),
+      openIssues:  Number(stats.open_issues),
+      activeDevs:  Number(stats.active_devs),
+      totalPaid:   Number(stats.total_paid),
     },
     recentActivity: recentActivity.map((a: any) => ({
-      type: a.status,
-      issueTitle: a.title,
-      repo: a.repo,
-      salary: a.salary,
-      date: a.date,
-      developer: a.developer_username,
+      type:        a.status,
+      issueTitle:  a.title,
+      repo:        a.repo,
+      salary:      a.salary,
+      date:        a.date,
+      developer:   a.developer_username,
     })),
   })
 })
 
-// ─── Developer Profile API ────────────────────────────
+// ─── Developer Profile API ────────────────────────────────
 
 function maskApiKey(key: string | null): string | null {
   if (!key) return null
@@ -812,12 +801,10 @@ function getInitials(firstName: string, lastName: string): string {
 }
 
 /** Owner profile — full data for the logged-in developer */
-app.get('/api/developer/profile', async (c) => {
-  const id = c.req.query('id')
+app.get('/api/developer/profile', requireDeveloper, async (c) => {
+  const id = c.get('user').sub
 
-  const [dev] = id
-    ? await sql`SELECT * FROM developers WHERE id = ${id}`
-    : await sql`SELECT * FROM developers ORDER BY created_at ASC LIMIT 1`
+  const [dev] = await sql`SELECT * FROM developers WHERE id = ${id}`
 
   if (!dev) {
     return c.json({
@@ -852,28 +839,28 @@ app.get('/api/developer/profile', async (c) => {
   `
 
   return c.json({
-    username: dev.username ?? dev.email.split('@')[0],
-    firstName: dev.first_name,
-    lastName: dev.last_name,
-    initials: getInitials(dev.first_name, dev.last_name),
-    email: dev.email,
+    username:        dev.username ?? dev.email.split('@')[0],
+    firstName:       dev.first_name,
+    lastName:        dev.last_name,
+    initials:        getInitials(dev.first_name, dev.last_name),
+    email:           dev.email,
     githubConnected: !!dev.github_id,
-    githubUsername: dev.username ?? null,
-    model: dev.preferred_model,
-    apiKeyMasked: maskApiKey(dev.anthropic_api_key),
-    memberSince: dev.created_at,
+    githubUsername:  dev.username ?? null,
+    model:           dev.preferred_model,
+    apiKeyMasked:    maskApiKey(dev.anthropic_api_key),
+    memberSince:     dev.created_at,
     stats: {
-      issuesCompleted: Number(stats.issues_completed),
-      totalEarned: Number(stats.total_earned),
+      issuesCompleted:  Number(stats.issues_completed),
+      totalEarned:      Number(stats.total_earned),
       reposContributed: Number(stats.repos_contributed),
-      activeStreak: Number(stats.active_streak),
+      activeStreak:     Number(stats.active_streak),
     },
     recentActivity: activity.map((a: any) => ({
-      type: a.type,
+      type:       a.type,
       issueTitle: a.issue_title,
-      repo: a.repo,
-      date: a.date,
-      salary: a.salary,
+      repo:       a.repo,
+      date:       a.date,
+      salary:     a.salary,
     })),
   })
 })
@@ -908,59 +895,59 @@ app.get('/api/developer/profile/:username', async (c) => {
   `
 
   return c.json({
-    username: dev.username,
-    initials: getInitials(dev.first_name, dev.last_name),
+    username:    dev.username,
+    initials:    getInitials(dev.first_name, dev.last_name),
     memberSince: dev.created_at,
     stats: {
-      issuesCompleted: Number(stats.issues_completed),
-      totalEarned: Number(stats.total_earned),
+      issuesCompleted:  Number(stats.issues_completed),
+      totalEarned:      Number(stats.total_earned),
       reposContributed: Number(stats.repos_contributed),
     },
     recentActivity: activity.map((a: any) => ({
-      type: a.type,
+      type:       a.type,
       issueTitle: a.issue_title,
-      repo: a.repo,
-      date: a.date,
-      salary: a.salary,
+      repo:       a.repo,
+      date:       a.date,
+      salary:     a.salary,
     })),
   })
 })
 
-// ─── Developer Issues API ─────────────────────────────
+// ─── Developer Issues API ─────────────────────────────────
 
 /** List issues for the logged-in developer */
-app.get('/api/developer/issues', async (c) => {
-  const devId = c.req.query('developer_id')
+app.get('/api/developer/issues', requireDeveloper, async (c) => {
+  const devId = c.get('user').sub
 
   const rows = await sql`
     SELECT di.id, di.status, di.claimed_at, di.submitted_at, di.completed_at,
            i.issue_number, i.title, i.repo_full_name, i.salary, i.labels
     FROM developer_issues di
     JOIN issues i ON i.id = di.issue_id
-    ${devId ? sql`WHERE di.developer_id = ${devId}` : sql``}
+    WHERE di.developer_id = ${devId}
     ORDER BY di.claimed_at DESC
   `
 
   const issues = rows.map((r: any) => ({
-    id: String(r.issue_number),
-    title: r.title,
-    repo: r.repo_full_name,
-    status: r.status,
-    labels: r.labels ?? [],
-    salary: r.salary,
-    devs: 0,
+    id:          String(r.issue_number),
+    title:       r.title,
+    repo:        r.repo_full_name,
+    status:      r.status,
+    labels:      r.labels ?? [],
+    salary:      r.salary,
+    devs:        0,
     devInitials: [],
-    devColors: [],
-    comments: 0,
-    updated: (r.completed_at ?? r.submitted_at ?? r.claimed_at)?.toISOString?.() ?? '',
+    devColors:   [],
+    comments:    0,
+    updated:     (r.completed_at ?? r.submitted_at ?? r.claimed_at)?.toISOString?.() ?? '',
   }))
 
   return c.json({ issues, total: issues.length })
 })
 
 /** Stats for the developer issues page */
-app.get('/api/developer/issues/stats', async (c) => {
-  const devId = c.req.query('developer_id')
+app.get('/api/developer/issues/stats', requireDeveloper, async (c) => {
+  const devId = c.get('user').sub
 
   const [stats] = await sql`
     SELECT
@@ -970,23 +957,21 @@ app.get('/api/developer/issues/stats', async (c) => {
       COALESCE(SUM(i.salary) FILTER (WHERE di.status = 'completed'), 0) AS earned_total
     FROM developer_issues di
     JOIN issues i ON i.id = di.issue_id
-    ${devId ? sql`WHERE di.developer_id = ${devId}` : sql``}
+    WHERE di.developer_id = ${devId}
   `
 
   return c.json({
-    openCount: Number(stats.open_count),
+    openCount:    Number(stats.open_count),
     claimedCount: Number(stats.claimed_count),
-    totalValue: Number(stats.total_value),
-    earnedTotal: Number(stats.earned_total),
+    totalValue:   Number(stats.total_value),
+    earnedTotal:  Number(stats.earned_total),
   })
 })
 
 /** Claim an issue */
-app.post('/api/developer/issues/claim', async (c) => {
-  const { developer_id, issue_id } = await c.req.json<{
-    developer_id: string
-    issue_id: number
-  }>()
+app.post('/api/developer/issues/claim', requireDeveloper, async (c) => {
+  const { issue_id } = await c.req.json<{ issue_id: number }>()
+  const developer_id = c.get('user').sub
 
   const [row] = await sql`
     INSERT INTO developer_issues (developer_id, issue_id, status)
@@ -999,11 +984,9 @@ app.post('/api/developer/issues/claim', async (c) => {
 })
 
 /** Submit work on an issue */
-app.post('/api/developer/issues/submit', async (c) => {
-  const { developer_id, issue_id } = await c.req.json<{
-    developer_id: string
-    issue_id: number
-  }>()
+app.post('/api/developer/issues/submit', requireDeveloper, async (c) => {
+  const { issue_id } = await c.req.json<{ issue_id: number }>()
+  const developer_id = c.get('user').sub
 
   const [row] = await sql`
     UPDATE developer_issues
@@ -1015,12 +998,11 @@ app.post('/api/developer/issues/submit', async (c) => {
   return c.json({ submitted: row ?? null })
 })
 
-// ─── Developer Earnings API ──────────────────────────
+// ─── Developer Earnings API ───────────────────────────────
 
 /** Earnings summary for the logged-in developer */
-app.get('/api/developer/earnings', async (c) => {
-  const devId = c.req.query('developer_id')
-  if (!devId) return c.json({ error: 'developer_id required' }, 400)
+app.get('/api/developer/earnings', requireDeveloper, async (c) => {
+  const devId = c.get('user').sub
 
   const [totals] = await sql`
     SELECT
@@ -1041,13 +1023,13 @@ app.get('/api/developer/earnings', async (c) => {
   `
 
   return c.json({
-    totalEarned: Number(totals.total_earned),
-    pending: Number(totals.pending),
+    totalEarned:    Number(totals.total_earned),
+    pending:        Number(totals.pending),
     completedCount: Number(totals.completed_count),
     history: history.map((h: any) => ({
-      title: h.title,
-      repo: h.repo,
-      salary: h.salary,
+      title:       h.title,
+      repo:        h.repo,
+      salary:      h.salary,
       completedAt: h.completed_at,
     })),
   })
@@ -1056,7 +1038,7 @@ app.get('/api/developer/earnings', async (c) => {
 // ─── Issues API ───────────────────────────────────────────
 
 /** Fetch open issues from GitHub for all connected repos of an installation */
-app.get('/api/issues', async (c) => {
+app.get('/api/issues', requireCompany, async (c) => {
   const installationId = Number(c.req.query('installation_id'))
   if (!installationId) return c.json({ error: 'installation_id required' }, 400)
 
@@ -1084,15 +1066,14 @@ app.get('/api/issues', async (c) => {
     }>
 
     for (const issue of issues) {
-      // GitHub's issues endpoint also returns PRs — skip them
       if (issue.pull_request) continue
       allIssues.push({
-        number: issue.number,
-        title: issue.title,
-        repo: repo.repo_full_name,
-        labels: issue.labels.map((l) => l.name),
+        number:     issue.number,
+        title:      issue.title,
+        repo:       repo.repo_full_name,
+        labels:     issue.labels.map((l) => l.name),
         created_at: issue.created_at,
-        html_url: issue.html_url,
+        html_url:   issue.html_url,
       })
     }
   }
@@ -1101,7 +1082,7 @@ app.get('/api/issues', async (c) => {
 })
 
 /** Save configured issues with salaries */
-app.post('/api/issues/configure', async (c) => {
+app.post('/api/issues/configure', requireCompany, async (c) => {
   const { installation_id, issues } = await c.req.json<{
     installation_id: number
     issues: Array<{
@@ -1131,7 +1112,7 @@ app.post('/api/issues/configure', async (c) => {
 // ─── Company Dashboard API ────────────────────────────────
 
 /** Stats must be registered before the issues list to avoid route shadowing */
-app.get('/api/company/issues/stats', async (c) => {
+app.get('/api/company/issues/stats', requireCompany, async (c) => {
   const [row] = await sql`
     SELECT
       COUNT(*) FILTER (WHERE status = 'open')                    AS "openCount",
@@ -1150,7 +1131,7 @@ app.get('/api/company/issues/stats', async (c) => {
 })
 
 /** Promoted issues — what the company dashboard table shows */
-app.get('/api/company/issues', async (c) => {
+app.get('/api/company/issues', requireCompany, async (c) => {
   const rows = await sql`SELECT * FROM issues ORDER BY created_at DESC`
   const issues = rows.map((r) => ({
     id:          `#${r.issue_number}`,
@@ -1165,36 +1146,6 @@ app.get('/api/company/issues', async (c) => {
     updated:     new Date(r.updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
   }))
   return c.json({ issues, total: issues.length })
-})
-
-/** Repos for the filter dropdown */
-app.get('/api/company/repos', async (c) => {
-  const rows = await sql`SELECT DISTINCT repo_full_name FROM connected_repos`
-  return c.json(rows.map((r) => ({
-    name: (r.repo_full_name as string).split('/')[1] ?? r.repo_full_name,
-    full: r.repo_full_name,
-  })))
-})
-
-/** Company profile for the topbar */
-app.get('/api/company/profile', async (c) => {
-  const [company] = await sql`SELECT org_name, plan FROM companies LIMIT 1`
-  if (company) {
-    return c.json({
-      name:     company.org_name,
-      initials: (company.org_name as string).slice(0, 2).toUpperCase(),
-      plan:     company.plan,
-    })
-  }
-  const [inst] = await sql`SELECT account_login FROM github_installations LIMIT 1`
-  if (inst) {
-    return c.json({
-      name:     inst.account_login,
-      initials: (inst.account_login as string).slice(0, 2).toUpperCase(),
-      plan:     'Free',
-    })
-  }
-  return c.json({ name: '—', initials: '?', plan: '—' })
 })
 
 export const handler = handle(app)
