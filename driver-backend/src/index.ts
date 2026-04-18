@@ -399,25 +399,6 @@ app.get('/api/installations', async (c) => {
 
 // ─── Developer Profile API ────────────────────────────
 
-/** Mock activity — will be replaced once issues/issue_developers tables exist */
-const mockActivity = [
-  { type: 'completed', issueTitle: 'Fix race condition in streaming response handler', repo: 'anthropic/claude-tools', date: '2d ago', salary: 450 },
-  { type: 'completed', issueTitle: 'Add retry logic to batch API client', repo: 'anthropic/claude-tools', date: '4d ago', salary: 320 },
-  { type: 'submitted', issueTitle: 'Resolve memory leak in long-running sessions', repo: 'acme-corp/data-pipeline', date: '5d ago', salary: 600 },
-  { type: 'claimed', issueTitle: 'Implement cursor-based pagination for list endpoints', repo: 'acme-corp/data-pipeline', date: '6d ago', salary: 275 },
-  { type: 'completed', issueTitle: 'Fix incorrect token count in usage dashboard', repo: 'openai/tiktoken', date: '1w ago', salary: 180 },
-  { type: 'completed', issueTitle: 'Add TypeScript type exports for plugin API', repo: 'vercel/next.js', date: '1w ago', salary: 350 },
-  { type: 'submitted', issueTitle: 'Update OAuth scopes documentation', repo: 'anthropic/claude-tools', date: '2w ago', salary: 120 },
-  { type: 'completed', issueTitle: 'Fix CSS grid layout bug in settings panel', repo: 'acme-corp/dashboard', date: '2w ago', salary: 200 },
-]
-
-const mockStats = {
-  issuesCompleted: 47,
-  totalEarned: 12400,
-  reposContributed: 8,
-  activeStreak: 14,
-}
-
 function maskApiKey(key: string | null): string | null {
   if (!key) return null
   return key.length > 8 ? `${key.slice(0, 6)}...${key.slice(-4)}` : '••••'
@@ -433,7 +414,6 @@ function getInitials(firstName: string, lastName: string): string {
 app.get('/api/developer/profile', async (c) => {
   const id = c.req.query('id')
 
-  // If no id provided, fall back to first developer in DB (dev convenience)
   const [dev] = id
     ? await sql`SELECT * FROM developers WHERE id = ${id}`
     : await sql`SELECT * FROM developers ORDER BY created_at ASC LIMIT 1`
@@ -448,6 +428,28 @@ app.get('/api/developer/profile', async (c) => {
     })
   }
 
+  const [stats] = await sql`
+    SELECT
+      COUNT(*) FILTER (WHERE di.status = 'completed') AS issues_completed,
+      COALESCE(SUM(ci.salary) FILTER (WHERE di.status = 'completed'), 0) AS total_earned,
+      COUNT(DISTINCT ci.repo_full_name) AS repos_contributed,
+      0 AS active_streak
+    FROM developer_issues di
+    JOIN configured_issues ci ON ci.id = di.configured_issue_id
+    WHERE di.developer_id = ${dev.id}
+  `
+
+  const activity = await sql`
+    SELECT di.status AS type, ci.title AS issue_title, ci.repo_full_name AS repo,
+           COALESCE(di.completed_at, di.submitted_at, di.claimed_at) AS date,
+           ci.salary
+    FROM developer_issues di
+    JOIN configured_issues ci ON ci.id = di.configured_issue_id
+    WHERE di.developer_id = ${dev.id}
+    ORDER BY COALESCE(di.completed_at, di.submitted_at, di.claimed_at) DESC
+    LIMIT 10
+  `
+
   return c.json({
     username: dev.username ?? dev.email.split('@')[0],
     firstName: dev.first_name,
@@ -459,9 +461,19 @@ app.get('/api/developer/profile', async (c) => {
     model: dev.preferred_model,
     apiKeyMasked: maskApiKey(dev.anthropic_api_key),
     memberSince: dev.created_at,
-    // TODO: query real stats once issues/issue_developers tables exist
-    stats: mockStats,
-    recentActivity: mockActivity,
+    stats: {
+      issuesCompleted: Number(stats.issues_completed),
+      totalEarned: Number(stats.total_earned),
+      reposContributed: Number(stats.repos_contributed),
+      activeStreak: Number(stats.active_streak),
+    },
+    recentActivity: activity.map((a: any) => ({
+      type: a.type,
+      issueTitle: a.issue_title,
+      repo: a.repo,
+      date: a.date,
+      salary: a.salary,
+    })),
   })
 })
 
@@ -473,17 +485,43 @@ app.get('/api/developer/profile/:username', async (c) => {
 
   if (!dev) return c.json({ error: 'Developer not found' }, 404)
 
+  const [stats] = await sql`
+    SELECT
+      COUNT(*) FILTER (WHERE di.status = 'completed') AS issues_completed,
+      COALESCE(SUM(ci.salary) FILTER (WHERE di.status = 'completed'), 0) AS total_earned,
+      COUNT(DISTINCT ci.repo_full_name) AS repos_contributed
+    FROM developer_issues di
+    JOIN configured_issues ci ON ci.id = di.configured_issue_id
+    WHERE di.developer_id = ${dev.id}
+  `
+
+  const activity = await sql`
+    SELECT di.status AS type, ci.title AS issue_title, ci.repo_full_name AS repo,
+           COALESCE(di.completed_at, di.submitted_at, di.claimed_at) AS date,
+           ci.salary
+    FROM developer_issues di
+    JOIN configured_issues ci ON ci.id = di.configured_issue_id
+    WHERE di.developer_id = ${dev.id}
+    ORDER BY COALESCE(di.completed_at, di.submitted_at, di.claimed_at) DESC
+    LIMIT 5
+  `
+
   return c.json({
     username: dev.username,
     initials: getInitials(dev.first_name, dev.last_name),
     memberSince: dev.created_at,
-    // TODO: query real stats once issues/issue_developers tables exist
     stats: {
-      issuesCompleted: mockStats.issuesCompleted,
-      totalEarned: mockStats.totalEarned,
-      reposContributed: mockStats.reposContributed,
+      issuesCompleted: Number(stats.issues_completed),
+      totalEarned: Number(stats.total_earned),
+      reposContributed: Number(stats.repos_contributed),
     },
-    recentActivity: mockActivity.slice(0, 5),
+    recentActivity: activity.map((a: any) => ({
+      type: a.type,
+      issueTitle: a.issue_title,
+      repo: a.repo,
+      date: a.date,
+      salary: a.salary,
+    })),
   })
 })
 
