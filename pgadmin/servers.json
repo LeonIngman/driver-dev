@@ -1,0 +1,14 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "driver",
+      "Group": "Servers",
+      "Host": "db",
+      "Port": 5432,
+      "MaintenanceDB": "driver",
+      "Username": "driver",
+      "SSLMode": "prefer",
+      "PassFile": "/pgadmin4/pgpass"
+    }
+  }
+}
