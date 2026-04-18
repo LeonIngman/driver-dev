@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { cookies } from 'next/headers'
 
 const API = process.env.API_URL ?? 'http://localhost:3001'
 
@@ -44,7 +45,10 @@ async function fetchStats(): Promise<Stats> {
 
 async function fetchProfile(): Promise<Profile> {
   try {
-    const res = await fetch(`${API}/api/developer/profile`, { cache: 'no-store' })
+    const cookieStore = await cookies()
+    const devId = cookieStore.get('developer_id')?.value
+    const url = devId ? `${API}/api/developer/profile?id=${devId}` : `${API}/api/developer/profile`
+    const res = await fetch(url, { cache: 'no-store' })
     if (!res.ok) return { username: '—', initials: '?', githubConnected: false, model: '—' }
     return await res.json()
   } catch { return { username: '—', initials: '?', githubConnected: false, model: '—' } }

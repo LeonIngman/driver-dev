@@ -1,3 +1,5 @@
+import { cookies } from 'next/headers'
+
 const API = process.env.API_URL ?? 'http://localhost:3001'
 
 type ActivityItem = {
@@ -30,7 +32,10 @@ type ProfileData = {
 
 async function fetchProfile(): Promise<ProfileData> {
   try {
-    const res = await fetch(`${API}/api/developer/profile`, { cache: 'no-store' })
+    const cookieStore = await cookies()
+    const devId = cookieStore.get('developer_id')?.value
+    const url = devId ? `${API}/api/developer/profile?id=${devId}` : `${API}/api/developer/profile`
+    const res = await fetch(url, { cache: 'no-store' })
     if (!res.ok) throw new Error()
     return await res.json()
   } catch {

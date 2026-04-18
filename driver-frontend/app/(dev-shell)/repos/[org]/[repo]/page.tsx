@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { cookies } from 'next/headers'
 
 const API = process.env.API_URL ?? 'http://localhost:3001'
 
@@ -33,6 +34,18 @@ async function fetchIssues(org: string, repo: string): Promise<Issue[]> {
   } catch { return [] }
 }
 
+async function fetchInitials(): Promise<string> {
+  try {
+    const cookieStore = await cookies()
+    const devId = cookieStore.get('developer_id')?.value
+    const url = devId ? `${API}/api/developer/profile?id=${devId}` : `${API}/api/developer/profile`
+    const res = await fetch(url, { cache: 'no-store' })
+    if (!res.ok) return '?'
+    const data = await res.json()
+    return data.initials ?? '?'
+  } catch { return '?' }
+}
+
 const statusCfg = {
   open:      { label: 'Open',    cls: 'badge-blue' },
   claimed:   { label: 'Claimed', cls: 'badge-yellow' },
@@ -53,7 +66,7 @@ export default async function RepoDetail({
 }) {
   const { org, repo } = await params
 
-  const [repoData, issues] = await Promise.all([fetchRepo(org, repo), fetchIssues(org, repo)])
+  const [repoData, issues, initials] = await Promise.all([fetchRepo(org, repo), fetchIssues(org, repo), fetchInitials()])
 
   const openIssues = issues.filter(i => i.status !== 'completed')
   const totalValue = openIssues.reduce((a, i) => a + i.salary, 0)
@@ -80,7 +93,7 @@ export default async function RepoDetail({
           <input className="input" type="text" placeholder="Search issues…" style={{ width: 200, paddingLeft: '2rem', padding: '0.4rem 0.75rem 0.4rem 2rem', fontSize: '0.8rem' }} />
         </div>
         <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(135deg, var(--blue), var(--blue-light))', display: 'flex', alignItems: 'center', justifyContent: 'center', marginLeft: '0.5rem' }}>
-          <span style={{ fontSize: '0.6rem', fontWeight: 700, color: '#fff' }}>JK</span>
+          <span style={{ fontSize: '0.6rem', fontWeight: 700, color: '#fff' }}>{initials}</span>
         </div>
       </div>
 
