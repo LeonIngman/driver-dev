@@ -1,0 +1,14 @@
+# env
+.env
+.env.local
+
+# OS
+.DS_Store
+
+# IDE
+.vscode/*
+!.vscode/launch.json
+!.vscode/*.code-snippets
+.idea/workspace.xml
+.idea/usage.statistics.xml
+.idea/shelf
