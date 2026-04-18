@@ -27,38 +27,42 @@ const labelConfig: Record<string, string> = {
   P1: 'badge-red', P2: 'badge-yellow',
 }
 
-async function fetchIssues(): Promise<{ issues: Issue[]; total: number }> {
+function getAuthHeader(cookieStore: Awaited<ReturnType<typeof cookies>>): Record<string, string> {
+  const token = cookieStore.get('token')?.value
+  return token ? { Authorization: `Bearer ${token}` } : {}
+}
+
+async function fetchIssues(authHeader: Record<string, string>): Promise<{ issues: Issue[]; total: number }> {
   try {
-    const res = await fetch(`${API}/api/developer/issues`, { cache: 'no-store' })
+    const res = await fetch(`${API}/api/developer/issues`, { cache: 'no-store', headers: authHeader })
     if (!res.ok) return { issues: [], total: 0 }
     return await res.json()
   } catch { return { issues: [], total: 0 } }
 }
 
-async function fetchStats(): Promise<Stats> {
+async function fetchStats(authHeader: Record<string, string>): Promise<Stats> {
   try {
-    const res = await fetch(`${API}/api/developer/issues/stats`, { cache: 'no-store' })
+    const res = await fetch(`${API}/api/developer/issues/stats`, { cache: 'no-store', headers: authHeader })
     if (!res.ok) return { openCount: 0, claimedCount: 0, totalValue: 0, earnedTotal: 0 }
     return await res.json()
   } catch { return { openCount: 0, claimedCount: 0, totalValue: 0, earnedTotal: 0 } }
 }
 
-async function fetchProfile(): Promise<Profile> {
+async function fetchProfile(authHeader: Record<string, string>): Promise<Profile> {
   try {
-    const cookieStore = await cookies()
-    const devId = cookieStore.get('developer_id')?.value
-    const url = devId ? `${API}/api/developer/profile?id=${devId}` : `${API}/api/developer/profile`
-    const res = await fetch(url, { cache: 'no-store' })
+    const res = await fetch(`${API}/api/developer/profile`, { cache: 'no-store', headers: authHeader })
     if (!res.ok) return { username: '—', initials: '?', githubConnected: false, model: '—' }
     return await res.json()
   } catch { return { username: '—', initials: '?', githubConnected: false, model: '—' } }
 }
 
 export default async function DeveloperIssues() {
+  const cookieStore = await cookies()
+  const authHeader = getAuthHeader(cookieStore)
   const [{ issues, total }, stats, profile] = await Promise.all([
-    fetchIssues(),
-    fetchStats(),
-    fetchProfile(),
+    fetchIssues(authHeader),
+    fetchStats(authHeader),
+    fetchProfile(authHeader),
   ])
 
   return (
@@ -83,9 +87,11 @@ export default async function DeveloperIssues() {
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginLeft: '0.5rem' }}>
-          <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(135deg, var(--blue), var(--blue-light))', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-            <span style={{ fontSize: '0.6rem', fontWeight: 700, color: '#fff' }}>{profile.initials}</span>
-          </div>
+          <Link href="/developer/profile" style={{ textDecoration: 'none' }}>
+            <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(135deg, var(--blue), var(--blue-light))', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+              <span style={{ fontSize: '0.6rem', fontWeight: 700, color: '#fff' }}>{profile.initials}</span>
+            </div>
+          </Link>
         </div>
       </div>
 
@@ -100,7 +106,7 @@ export default async function DeveloperIssues() {
             </h1>
             <p style={{ fontSize: '0.825rem', color: 'var(--text-2)' }}>Track your claimed issues and fix progress across all repos.</p>
           </div>
-          <Link href="/repos" className="btn btn-blue" style={{ textDecoration: 'none' }}>
+          <Link href="/developer/repos" className="btn btn-blue" style={{ textDecoration: 'none' }}>
             <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
               <path d="M6.5 1.5v10M1.5 6.5h10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
             </svg>

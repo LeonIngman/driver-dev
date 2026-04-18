@@ -228,7 +228,7 @@ export default function NotFound() {
               Go home
             </Link>
             <Link
-              href="/repos"
+              href="/developer/repos"
               style={{
                 display: 'inline-flex', alignItems: 'center', gap: '0.5rem',
                 padding: '0.75rem 1.5rem',

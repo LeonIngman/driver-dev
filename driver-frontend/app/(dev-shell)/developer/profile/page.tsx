@@ -33,9 +33,12 @@ type ProfileData = {
 async function fetchProfile(): Promise<ProfileData> {
   try {
     const cookieStore = await cookies()
-    const devId = cookieStore.get('developer_id')?.value
-    const url = devId ? `${API}/api/developer/profile?id=${devId}` : `${API}/api/developer/profile`
-    const res = await fetch(url, { cache: 'no-store' })
+    const token = cookieStore.get('token')?.value
+    if (!token) throw new Error()
+    const res = await fetch(`${API}/api/developer/profile`, {
+      cache: 'no-store',
+      headers: { Authorization: `Bearer ${token}` },
+    })
     if (!res.ok) throw new Error()
     return await res.json()
   } catch {
@@ -71,9 +74,11 @@ export default async function DeveloperProfile() {
           </nav>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginLeft: '0.5rem' }}>
-          <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(135deg, var(--blue), var(--blue-light))', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-            <span style={{ fontSize: '0.6rem', fontWeight: 700, color: '#fff' }}>{profile.initials}</span>
-          </div>
+          <Link href="/developer/profile" style={{ textDecoration: 'none' }}>
+            <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(135deg, var(--blue), var(--blue-light))', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+              <span style={{ fontSize: '0.6rem', fontWeight: 700, color: '#fff' }}>{profile.initials}</span>
+            </div>
+          </Link>
         </div>
       </div>
 

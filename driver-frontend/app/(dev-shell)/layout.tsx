@@ -6,7 +6,7 @@ const API = process.env.API_URL ?? 'http://localhost:3001'
 const navItems: NavItem[] = [
   {
     label: 'Browse',
-    href: '/repos',
+    href: '/developer/repos',
     icon: <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><circle cx="7.5" cy="7.5" r="5.5" stroke="currentColor" strokeWidth="1.3"/><circle cx="7.5" cy="7.5" r="2" stroke="currentColor" strokeWidth="1.3"/></svg>,
   },
   {
@@ -26,9 +26,12 @@ type Profile = { username: string; initials: string; githubConnected: boolean; m
 async function fetchProfile(): Promise<Profile> {
   try {
     const cookieStore = await cookies()
-    const devId = cookieStore.get('developer_id')?.value
-    const url = devId ? `${API}/api/developer/profile?id=${devId}` : `${API}/api/developer/profile`
-    const res = await fetch(url, { cache: 'no-store' })
+    const token = cookieStore.get('token')?.value
+    if (!token) return { username: '—', initials: '?', githubConnected: false, model: '—' }
+    const res = await fetch(`${API}/api/developer/profile`, {
+      cache: 'no-store',
+      headers: { Authorization: `Bearer ${token}` },
+    })
     if (!res.ok) return { username: '—', initials: '?', githubConnected: false, model: '—' }
     return await res.json()
   } catch { return { username: '—', initials: '?', githubConnected: false, model: '—' } }

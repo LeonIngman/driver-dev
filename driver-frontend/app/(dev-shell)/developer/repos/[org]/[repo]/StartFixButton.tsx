@@ -22,6 +22,7 @@ export default function StartFixButton({
     try {
       const res = await fetch(`${API}/api/sessions`, {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ org, repo, issueNumber }),
       })

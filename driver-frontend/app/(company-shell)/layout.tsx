@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { cookies } from 'next/headers'
 import { Sidebar, type NavItem } from '@/app/components/Sidebar'
 
 const API = process.env.API_URL ?? 'http://localhost:3001'
@@ -41,24 +42,27 @@ function buildNavItems(profileSlug: string): NavItem[] {
 type Repo = { name: string; full: string }
 type Profile = { name: string; initials: string; plan: string; slug: string }
 
-async function fetchRepos(): Promise<Repo[]> {
+async function fetchRepos(authHeader: Record<string, string>): Promise<Repo[]> {
   try {
-    const res = await fetch(`${API}/api/company/repos`, { cache: 'no-store' })
+    const res = await fetch(`${API}/api/company/repos`, { cache: 'no-store', headers: authHeader })
     if (!res.ok) return []
     return await res.json()
   } catch { return [] }
 }
 
-async function fetchProfile(): Promise<Profile> {
+async function fetchProfile(authHeader: Record<string, string>): Promise<Profile> {
   try {
-    const res = await fetch(`${API}/api/company/profile`, { cache: 'no-store' })
+    const res = await fetch(`${API}/api/company/profile`, { cache: 'no-store', headers: authHeader })
     if (!res.ok) return { name: '—', initials: '?', plan: '—', slug: '' }
     return await res.json()
   } catch { return { name: '—', initials: '?', plan: '—', slug: '' } }
 }
 
 export default async function CompanyShellLayout({ children }: { children: React.ReactNode }) {
-  const [repos, profile] = await Promise.all([fetchRepos(), fetchProfile()])
+  const cookieStore = await cookies()
+  const token = cookieStore.get('token')?.value
+  const authHeader = token ? { Authorization: `Bearer ${token}` } : {}
+  const [repos, profile] = await Promise.all([fetchRepos(authHeader), fetchProfile(authHeader)])
   const navItems = buildNavItems(profile.slug)
 
   const reposExtras = (

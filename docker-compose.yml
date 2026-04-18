@@ -48,6 +48,7 @@ services:
       GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET}
       BACKEND_URL: http://localhost:3001
       FRONTEND_URL: http://localhost:3000
+      JWT_SECRET: ${JWT_SECRET}
     ports:
       - "3001:3001"
     depends_on:

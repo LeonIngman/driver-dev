@@ -11,12 +11,12 @@ const GithubIcon = () => (
 )
 
 const Logo = () => (
-  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+  <Link href="/" style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 8 }}>
     <div style={{ width: 28, height: 28, background: 'var(--blue)', borderRadius: 7, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <span style={{ color: '#fff', fontWeight: 800, fontSize: 14, fontFamily: 'var(--font-display)' }}>D</span>
     </div>
     <span style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 17, color: 'var(--text-1)' }}>Driver</span>
-  </div>
+  </Link>
 )
 
 export default function CompanySignup() {
@@ -84,7 +84,7 @@ export default function CompanySignup() {
           </h2>
           <p style={{ color: 'var(--text-2)', fontSize: '0.875rem', marginBottom: '1.25rem' }}>
             Already have an account?{' '}
-            <Link href="#" style={{ color: 'var(--blue)', textDecoration: 'none' }}>Sign in</Link>
+            <Link href="/company/signin" style={{ color: 'var(--blue)', textDecoration: 'none' }}>Sign in</Link>
           </p>
 
           <button className="oauth-btn" type="button" onClick={() => { window.location.href = `${API}/auth/github?role=company` }}>

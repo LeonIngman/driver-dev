@@ -30,6 +30,7 @@ function OnboardingForm() {
     try {
       const res = await fetch(`${API}/developers/${developerId}/api-key`, {
         method: 'PATCH',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ anthropicApiKey: apiKey }),
       })
@@ -38,7 +39,7 @@ function OnboardingForm() {
         setError(data.message ?? 'Something went wrong.')
         return
       }
-      router.push('/repos')
+      router.push('/developer/repos')
     } finally {
       setLoading(false)
     }

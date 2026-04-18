@@ -84,7 +84,7 @@ export default function ConnectRepo() {
     // Fetch repos and connected repos in parallel
     Promise.all([
       fetch(`${API}/api/repos?installation_id=${installationId}`).then((r) => r.json()),
-      fetch(`${API}/api/repos/connected?installation_id=${installationId}`).then((r) => r.json()),
+      fetch(`${API}/api/repos/connected?installation_id=${installationId}`, { credentials: 'include' }).then((r) => r.json()),
       fetch(`${API}/api/installations`).then((r) => r.json()),
     ])
       .then(([repoData, connectedData, installData]) => {
@@ -105,6 +105,7 @@ export default function ConnectRepo() {
     try {
       await fetch(`${API}/api/repos/connect`, {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           installation_id: Number(installationId),
@@ -127,6 +128,7 @@ export default function ConnectRepo() {
     try {
       await fetch(`${API}/api/repos/connect`, {
         method: 'DELETE',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           installation_id: Number(installationId),

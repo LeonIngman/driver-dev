@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { cookies } from 'next/headers'
 
 const API = process.env.API_URL ?? 'http://localhost:3001'
 
@@ -9,7 +10,7 @@ type Issue = {
 
 type Stats = { openCount: number; inProgressCount: number; activeDevs: number; totalValue: number; total: number }
 type Repo  = { name: string; full: string }
-type Profile = { name: string; initials: string; plan: string }
+type Profile = { name: string; initials: string; plan: string; slug: string }
 
 const statuses = ['All statuses', 'Open', 'Claimed', 'In Review', 'Completed']
 
@@ -25,44 +26,47 @@ const labelConfig: Record<string, string> = {
   security: 'badge-orange', a11y: 'badge-muted',
 }
 
-async function fetchIssues(): Promise<{ issues: Issue[]; total: number }> {
+async function fetchIssues(auth: Record<string, string>): Promise<{ issues: Issue[]; total: number }> {
   try {
-    const res = await fetch(`${API}/api/company/issues`, { cache: 'no-store' })
+    const res = await fetch(`${API}/api/company/issues`, { cache: 'no-store', headers: auth })
     if (!res.ok) return { issues: [], total: 0 }
     return await res.json()
   } catch { return { issues: [], total: 0 } }
 }
 
-async function fetchStats(): Promise<Stats> {
+async function fetchStats(auth: Record<string, string>): Promise<Stats> {
   try {
-    const res = await fetch(`${API}/api/company/issues/stats`, { cache: 'no-store' })
+    const res = await fetch(`${API}/api/company/issues/stats`, { cache: 'no-store', headers: auth })
     if (!res.ok) return { openCount: 0, inProgressCount: 0, activeDevs: 0, totalValue: 0, total: 0 }
     return await res.json()
   } catch { return { openCount: 0, inProgressCount: 0, activeDevs: 0, totalValue: 0, total: 0 } }
 }
 
-async function fetchRepos(): Promise<Repo[]> {
+async function fetchRepos(auth: Record<string, string>): Promise<Repo[]> {
   try {
-    const res = await fetch(`${API}/api/company/repos`, { cache: 'no-store' })
+    const res = await fetch(`${API}/api/company/repos`, { cache: 'no-store', headers: auth })
     if (!res.ok) return []
     return await res.json()
   } catch { return [] }
 }
 
-async function fetchProfile(): Promise<Profile> {
+async function fetchProfile(auth: Record<string, string>): Promise<Profile> {
   try {
-    const res = await fetch(`${API}/api/company/profile`, { cache: 'no-store' })
-    if (!res.ok) return { name: '—', initials: '?', plan: '—' }
+    const res = await fetch(`${API}/api/company/profile`, { cache: 'no-store', headers: auth })
+    if (!res.ok) return { name: '—', initials: '?', plan: '—', slug: '' }
     return await res.json()
-  } catch { return { name: '—', initials: '?', plan: '—' } }
+  } catch { return { name: '—', initials: '?', plan: '—', slug: '' } }
 }
 
 export default async function CompanyIssues() {
+  const cookieStore = await cookies()
+  const token = cookieStore.get('token')?.value
+  const auth = token ? { Authorization: `Bearer ${token}` } : {}
   const [{ issues, total }, stats, repos, profile] = await Promise.all([
-    fetchIssues(),
-    fetchStats(),
-    fetchRepos(),
-    fetchProfile(),
+    fetchIssues(auth),
+    fetchStats(auth),
+    fetchRepos(auth),
+    fetchProfile(auth),
   ])
 
   const repoFilterOptions = ['All repositories', ...repos.map(r => r.full)]
@@ -89,9 +93,11 @@ export default async function CompanyIssues() {
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginLeft: '0.5rem' }}>
-          <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--orange-bg)', border: '1px solid var(--orange-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-            <span style={{ fontSize: '0.6rem', fontWeight: 700, color: 'var(--orange)' }}>{profile.initials}</span>
-          </div>
+          <Link href={profile.slug ? `/company/profile/${profile.slug}` : '#'} style={{ textDecoration: 'none' }}>
+            <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--orange-bg)', border: '1px solid var(--orange-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+              <span style={{ fontSize: '0.6rem', fontWeight: 700, color: 'var(--orange)' }}>{profile.initials}</span>
+            </div>
+          </Link>
         </div>
       </div>
 
