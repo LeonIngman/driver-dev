@@ -87,7 +87,7 @@ export default function CompanySignup() {
             <Link href="/company/signin" style={{ color: 'var(--blue)', textDecoration: 'none' }}>Sign in</Link>
           </p>
 
-          <button className="oauth-btn" type="button" onClick={() => { window.location.href = `${API}/auth/github?role=company` }}>
+          <button className="oauth-btn" type="button" onClick={() => { window.location.href = `${API}/auth/github?role=company-install` }}>
             <GithubIcon />
             <span>Continue with GitHub</span>
           </button>

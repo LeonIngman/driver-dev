@@ -9,6 +9,7 @@ import {
   exchangeCodeForToken,
   getUser,
   getUserPrimaryEmail,
+  getUserInstallations,
   getInstallationRepos,
   getRepoIssues,
   getRepoDefaultBranch,
@@ -88,8 +89,9 @@ app.route('/companies', companies)
 // ─── GitHub Auth ───────────────────────────────────────────
 
 /**
- * GET /auth/github?role=developer  → GitHub OAuth (developer login)
- * GET /auth/github                 → GitHub App installation (company onboarding)
+ * GET /auth/github?role=developer      → GitHub OAuth (developer login)
+ * GET /auth/github?role=company        → GitHub OAuth (company sign-in, finds existing installation)
+ * GET /auth/github?role=company-install → GitHub App installation (company sign-up)
  */
 app.get('/auth/github', (c) => {
   const role = c.req.query('role')
@@ -103,7 +105,17 @@ app.get('/auth/github', (c) => {
     return c.redirect(`https://github.com/login/oauth/authorize?${params}`)
   }
 
-  // Company onboarding: install the GitHub App
+  if (role === 'company') {
+    // Company sign-in: OAuth to identify the user, then look up their installation
+    const params = new URLSearchParams({
+      client_id: process.env.GITHUB_CLIENT_ID!,
+      scope: 'user:email',
+      state: 'company',
+    })
+    return c.redirect(`https://github.com/login/oauth/authorize?${params}`)
+  }
+
+  // Company sign-up / onboarding: install the GitHub App
   const slug = process.env.GITHUB_APP_SLUG!
   return c.redirect(`https://github.com/apps/${slug}/installations/new`)
 })
@@ -150,6 +162,34 @@ app.get('/auth/github/callback', async (c) => {
     }
 
     return c.redirect(`${frontendUrl}/developer/onboarding?id=${dev.id}`)
+  }
+
+  // ── Company OAuth sign-in ────────────────────────────────
+  if (code && state === 'company') {
+    const { access_token } = await exchangeCodeForToken(code)
+    const data = await getUserInstallations(access_token) as {
+      installations: Array<{ id: number; app_id: number }>
+    }
+    const appId = Number(process.env.GITHUB_APP_ID!)
+    const installation = data.installations?.find(i => i.app_id === appId)
+
+    if (!installation) {
+      return c.redirect(`${frontendUrl}/company/signup?error=no_installation`)
+    }
+
+    const [company] = await sql`
+      SELECT c.id FROM companies c
+      JOIN github_installations gi ON gi.company_id = c.id
+      WHERE gi.installation_id = ${installation.id}
+      LIMIT 1
+    `
+
+    if (!company) {
+      return c.redirect(`${frontendUrl}/company/signup?error=no_account`)
+    }
+
+    setCookie(c, 'token', signToken({ sub: company.id, role: 'company' }), TOKEN_COOKIE_OPTS)
+    return c.redirect(`${frontendUrl}/company/dashboard`)
   }
 
   // ── GitHub App installation (company onboarding) ─────────
