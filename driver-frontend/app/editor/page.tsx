@@ -350,6 +350,7 @@ export default function Editor() {
   const [branchName, setBranchName] = useState<string | null>(null)
   const [dirtyFiles, setDirtyFiles] = useState<Set<string>>(new Set())
   const [prUrl, setPrUrl] = useState<string | null>(null)
+  const [showPrModal, setShowPrModal] = useState(false)
   const [viewMode, setViewMode] = useState<'code' | 'preview'>('code')
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [previewKey, setPreviewKey] = useState(0)
@@ -481,6 +482,7 @@ export default function Editor() {
       if (res.ok) {
         const data = await res.json()
         setPrUrl(data.pr_url)
+        setShowPrModal(true)
       }
     } finally {
       setSubmitting(false)
@@ -527,9 +529,10 @@ export default function Editor() {
           )}
 
           {prUrl && (
-            <a href={prUrl} target="_blank" rel="noopener noreferrer" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', background: 'var(--green-bg)', border: '1px solid rgba(52,211,153,0.25)', borderRadius: 5, padding: '0.25rem 0.625rem', textDecoration: 'none' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', background: 'var(--green-bg)', border: '1px solid rgba(52,211,153,0.25)', borderRadius: 5, padding: '0.25rem 0.625rem' }}>
+              <span className="live-dot" />
               <span style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--green)' }}>PR Created</span>
-            </a>
+            </div>
           )}
 
           <button className="btn btn-orange" style={{ padding: '0.4rem 0.875rem', fontSize: '0.78rem' }} onClick={handleSubmit} disabled={submitting}>
@@ -974,6 +977,59 @@ export default function Editor() {
           </div>
         </div>
       </div>
+
+      {/* PR Created modal */}
+      {showPrModal && prUrl && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 1000,
+          background: 'rgba(0,0,0,0.35)', backdropFilter: 'blur(4px)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          <div style={{
+            background: 'var(--bg-1)', border: '1px solid var(--border)',
+            borderRadius: 12, padding: '2rem 2.25rem', width: 380,
+            textAlign: 'center', animation: 'fadeUp 0.3s cubic-bezier(0.16,1,0.3,1) forwards',
+          }}>
+            <div style={{
+              width: 44, height: 44, borderRadius: '50%',
+              background: 'var(--green-bg)', border: '1px solid rgba(4,120,87,0.25)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              margin: '0 auto 1rem',
+            }}>
+              <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+                <path d="M6 11.5l3.5 3.5L16 7" stroke="var(--green)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </div>
+            <h2 style={{ fontSize: '1.125rem', fontWeight: 700, color: 'var(--text-1)', marginBottom: '0.5rem', fontFamily: 'var(--font-display)' }}>
+              PR created!
+            </h2>
+            <p style={{ fontSize: '0.8rem', color: 'var(--text-3)', marginBottom: '1.5rem', lineHeight: 1.5 }}>
+              Your pull request has been submitted for review.
+            </p>
+            <div style={{ display: 'flex', gap: '0.75rem' }}>
+              <button
+                className="btn btn-ghost"
+                style={{ flex: 1, fontSize: '0.8rem' }}
+                onClick={() => setShowPrModal(false)}
+              >
+                Keep editing
+              </button>
+              <a
+                href={prUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn btn-blue"
+                style={{ flex: 1, fontSize: '0.8rem', textDecoration: 'none' }}
+              >
+                Check out PR
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                  <path d="M2 6h8M6.5 2.5L10 6l-3.5 3.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              </a>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
