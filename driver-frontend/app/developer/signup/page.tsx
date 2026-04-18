@@ -1,4 +1,10 @@
+'use client'
+
 import Link from 'next/link'
+import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
+
+const API = process.env.NEXT_PUBLIC_API_URL
 
 const Logo = () => (
   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -24,7 +30,6 @@ const GoogleIcon = () => (
   </svg>
 )
 
-/* Anthropic / Claude icon — simplified A mark */
 const AnthropicIcon = () => (
   <svg width="20" height="20" viewBox="0 0 32 32" fill="none">
     <rect width="32" height="32" rx="8" fill="#CC785C"/>
@@ -32,14 +37,60 @@ const AnthropicIcon = () => (
   </svg>
 )
 
-const EmailIcon = () => (
-  <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-    <rect x="1.5" y="3.5" width="15" height="11" rx="1.5" stroke="currentColor" strokeWidth="1.3"/>
-    <path d="M1.5 6l7.5 5 7.5-5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
-  </svg>
-)
+type TopEarner = {
+  username: string
+  initials: string
+  fixesCount: number
+  earned: string
+}
 
 export default function DeveloperSignup() {
+  const router = useRouter()
+  const [form, setForm] = useState({ firstName: '', lastName: '', email: '', password: '', anthropicApiKey: '' })
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [topEarner, setTopEarner] = useState<TopEarner | null>(null)
+
+  useEffect(() => {
+    fetch(`${API}/developers/leaderboard/week`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => data && setTopEarner(data))
+      .catch(() => {})
+  }, [])
+
+  function set(field: string, value: string) {
+    setForm(f => ({ ...f, [field]: value }))
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    setError('')
+    setLoading(true)
+    try {
+      const res = await fetch(`${API}/developers/signup`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          firstName: form.firstName,
+          lastName: form.lastName,
+          email: form.email,
+          password: form.password,
+          anthropicApiKey: form.anthropicApiKey,
+        }),
+      })
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        setError(data.message ?? 'Signup failed.')
+        return
+      }
+
+      router.push('/repos')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg-0)', display: 'flex' }}>
 
@@ -88,17 +139,18 @@ export default function DeveloperSignup() {
             ))}
           </div>
 
-          {/* Earnings preview */}
-          <div className="anim-fade-up d5" style={{ marginTop: '2rem', background: 'var(--bg-2)', border: '1px solid var(--border)', borderRadius: 10, padding: '1rem 1.125rem' }}>
-            <div style={{ fontSize: '0.7rem', color: 'var(--text-3)', marginBottom: '0.625rem', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700 }}>Top earner this week</div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-              <div style={{ width: 34, height: 34, borderRadius: '50%', background: 'linear-gradient(135deg, var(--blue), var(--blue-light))', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', fontWeight: 700, color: '#fff' }}>JK</div>
-              <div>
-                <div style={{ fontWeight: 600, fontSize: '0.875rem', color: 'var(--text-1)' }}>jamie_k</div>
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-3)' }}>12 fixes merged · <span style={{ color: 'var(--green)' }}>$3,240 earned</span></div>
+          {topEarner && (
+            <div className="anim-fade-up d5" style={{ marginTop: '2rem', background: 'var(--bg-2)', border: '1px solid var(--border)', borderRadius: 10, padding: '1rem 1.125rem' }}>
+              <div style={{ fontSize: '0.7rem', color: 'var(--text-3)', marginBottom: '0.625rem', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700 }}>Top earner this week</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <div style={{ width: 34, height: 34, borderRadius: '50%', background: 'linear-gradient(135deg, var(--blue), var(--blue-light))', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', fontWeight: 700, color: '#fff' }}>{topEarner.initials}</div>
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: '0.875rem', color: 'var(--text-1)' }}>{topEarner.username}</div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-3)' }}>{topEarner.fixesCount} fixes merged · <span style={{ color: 'var(--green)' }}>{topEarner.earned} earned</span></div>
+                </div>
               </div>
             </div>
-          </div>
+          )}
         </div>
       </div>
 
@@ -116,56 +168,42 @@ export default function DeveloperSignup() {
             </p>
           </div>
 
-          {/* Step 1: Identity */}
-          <div className="anim-fade-up d2">
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
-              <div className="step-dot active" style={{ width: 22, height: 22, fontSize: '0.7rem' }}>1</div>
-              <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-2)' }}>Sign up with</span>
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.625rem', marginBottom: '1.25rem' }}>
-              <button className="oauth-btn">
-                <GithubIcon />
-                <span>Continue with GitHub</span>
-              </button>
-              <button className="oauth-btn">
-                <GoogleIcon />
-                <span>Continue with Google</span>
-              </button>
-            </div>
-
-            <div className="divider" style={{ marginBottom: '1.25rem' }}>or use email</div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.875rem', marginBottom: '1.5rem' }}>
-              <div style={{ display: 'flex', gap: '0.625rem' }}>
-                <div style={{ flex: 1 }}>
-                  <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-2)', marginBottom: '0.3rem' }}>First name</label>
-                  <input className="input" type="text" placeholder="Jamie" />
-                </div>
-                <div style={{ flex: 1 }}>
-                  <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-2)', marginBottom: '0.3rem' }}>Last name</label>
-                  <input className="input" type="text" placeholder="Klein" />
-                </div>
-              </div>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-2)', marginBottom: '0.3rem' }}>Email</label>
-                <input className="input" type="email" placeholder="you@example.com" />
-              </div>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-2)', marginBottom: '0.3rem' }}>Password</label>
-                <input className="input" type="password" placeholder="Min 8 characters" />
-              </div>
-            </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.625rem', marginBottom: '1.25rem' }}>
+            <button type="button" className="oauth-btn" onClick={() => { window.location.href = `${API}/auth/github?role=developer` }}>
+              <GithubIcon />
+              <span>Continue with GitHub</span>
+            </button>
+            <button type="button" className="oauth-btn" onClick={() => { window.location.href = `${API}/auth/google?role=developer` }}>
+              <GoogleIcon />
+              <span>Continue with Google</span>
+            </button>
           </div>
 
-          {/* Step 2: Connect Claude */}
-          <div className="anim-fade-up d3">
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
-              <div className="step-dot idle" style={{ width: 22, height: 22, fontSize: '0.7rem' }}>2</div>
-              <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-3)' }}>Connect Claude account</span>
+          <div className="divider" style={{ marginBottom: '1.25rem' }}>or use email</div>
+
+          <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '0.875rem' }}>
+            <div style={{ display: 'flex', gap: '0.625rem' }}>
+              <div style={{ flex: 1 }}>
+                <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-2)', marginBottom: '0.3rem' }}>First name</label>
+                <input className="input" type="text" placeholder="Jamie" value={form.firstName} onChange={e => set('firstName', e.target.value)} required />
+              </div>
+              <div style={{ flex: 1 }}>
+                <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-2)', marginBottom: '0.3rem' }}>Last name</label>
+                <input className="input" type="text" placeholder="Klein" value={form.lastName} onChange={e => set('lastName', e.target.value)} required />
+              </div>
             </div>
 
-            <div style={{ background: 'var(--bg-1)', border: '1px solid var(--border)', borderRadius: 10, padding: '1rem 1.125rem', marginBottom: '1.5rem' }}>
+            <div>
+              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-2)', marginBottom: '0.3rem' }}>Email</label>
+              <input className="input" type="email" placeholder="you@example.com" value={form.email} onChange={e => set('email', e.target.value)} required />
+            </div>
+
+            <div>
+              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-2)', marginBottom: '0.3rem' }}>Password</label>
+              <input className="input" type="password" placeholder="Min 8 characters" value={form.password} onChange={e => set('password', e.target.value)} required minLength={8} />
+            </div>
+
+            <div style={{ background: 'var(--bg-1)', border: '1px solid var(--border)', borderRadius: 10, padding: '1rem 1.125rem', marginTop: '0.25rem' }}>
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem', marginBottom: '0.875rem' }}>
                 <AnthropicIcon />
                 <div>
@@ -175,39 +213,42 @@ export default function DeveloperSignup() {
                   </p>
                 </div>
               </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-3)', marginBottom: '0.375rem' }}>
-                  Anthropic API key
-                </label>
-                <input
-                  className="input"
-                  type="password"
-                  placeholder="sk-ant-api03-…"
-                  style={{ fontFamily: 'var(--font-mono)', fontSize: '0.82rem', letterSpacing: '0.03em' }}
-                />
-                <p style={{ marginTop: '0.375rem', fontSize: '0.7rem', color: 'var(--text-3)' }}>
-                  Find your key at <span style={{ color: 'var(--blue)' }}>console.anthropic.com</span>
-                </p>
-              </div>
+              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-3)', marginBottom: '0.375rem' }}>
+                Anthropic API key
+              </label>
+              <input
+                className="input"
+                type="password"
+                placeholder="sk-ant-api03-…"
+                value={form.anthropicApiKey}
+                onChange={e => set('anthropicApiKey', e.target.value)}
+                style={{ fontFamily: 'var(--font-mono)', fontSize: '0.82rem', letterSpacing: '0.03em' }}
+              />
+              <p style={{ marginTop: '0.375rem', fontSize: '0.7rem', color: 'var(--text-3)' }}>
+                Find your key at <span style={{ color: 'var(--blue)' }}>console.anthropic.com</span>
+              </p>
             </div>
-          </div>
 
-          <div className="anim-fade-up d4">
-            <button className="btn btn-blue" style={{ width: '100%', padding: '0.75rem' }}>
-              Create developer account
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                <path d="M2.5 7h9M7.5 3.5L11 7l-3.5 3.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
-              </svg>
+            {error && (
+              <p style={{ fontSize: '0.8rem', color: '#f87171', margin: 0 }}>{error}</p>
+            )}
+
+            <button type="submit" className="btn btn-blue" disabled={loading} style={{ width: '100%', padding: '0.75rem', marginTop: '0.25rem' }}>
+              {loading ? 'Creating account…' : 'Create developer account'}
+              {!loading && (
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                  <path d="M2.5 7h9M7.5 3.5L11 7l-3.5 3.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              )}
             </button>
 
-            <p style={{ marginTop: '1rem', fontSize: '0.72rem', color: 'var(--text-3)', lineHeight: 1.5, textAlign: 'center' }}>
+            <p style={{ fontSize: '0.72rem', color: 'var(--text-3)', lineHeight: 1.5, textAlign: 'center' }}>
               By signing up you agree to our{' '}
               <Link href="#" style={{ color: 'var(--text-2)', textDecoration: 'underline' }}>Terms</Link>
               {' '}and{' '}
               <Link href="#" style={{ color: 'var(--text-2)', textDecoration: 'underline' }}>Privacy Policy</Link>.
             </p>
-          </div>
+          </form>
         </div>
       </div>
     </div>
