@@ -1,0 +1,72 @@
+name: Deploy Backend
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'driver-backend/**'
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    name: Build & Deploy to Lambda
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: driver-backend
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: driver-backend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Zip
+        run: npm run zip
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/github-actions-deploy
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Deploy ZIP to Lambda
+        run: |
+          aws lambda update-function-code \
+            --function-name ${{ secrets.LAMBDA_FUNCTION_NAME }} \
+            --zip-file fileb://lambda.zip
+
+      - name: Wait for update to complete
+        run: |
+          aws lambda wait function-updated \
+            --function-name ${{ secrets.LAMBDA_FUNCTION_NAME }}
+
+      - name: Update Lambda environment variables
+        run: |
+          aws lambda update-function-configuration \
+            --function-name ${{ secrets.LAMBDA_FUNCTION_NAME }} \
+            --environment "Variables={
+              DATABASE_URL=${{ secrets.DATABASE_URL }},
+              GITHUB_APP_ID=${{ secrets.GH_APP_ID }},
+              GITHUB_APP_PRIVATE_KEY=${{ secrets.GH_APP_PRIVATE_KEY }},
+              GITHUB_CLIENT_ID=${{ secrets.GH_CLIENT_ID }},
+              GITHUB_CLIENT_SECRET=${{ secrets.GH_CLIENT_SECRET }},
+              JWT_SECRET=${{ secrets.JWT_SECRET }},
+              ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }},
+              E2B_API_KEY=${{ secrets.E2B_API_KEY }}
+            }"

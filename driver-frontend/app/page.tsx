@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { cookies } from 'next/headers'
 
 /* ── Shared primitives ───────────────────────────── */
 const Logo = () => (
@@ -24,7 +25,7 @@ const ArrowRight = ({ size = 14 }: { size?: number }) => (
 )
 
 /* ── Section: Navbar ─────────────────────────────── */
-function Navbar() {
+function Navbar({ devHref, companyHref }: { devHref: string; companyHref: string }) {
   return (
     <header style={{
       position: 'sticky',
@@ -58,7 +59,7 @@ function Navbar() {
       {/* Audience CTAs */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
         <Link
-          href="/company/signup"
+          href={companyHref}
           style={{
             display: 'inline-flex', alignItems: 'center', gap: '0.4rem',
             padding: '0.45rem 1rem', fontSize: '0.825rem', fontWeight: 600,
@@ -71,7 +72,7 @@ function Navbar() {
           For Companies
         </Link>
         <Link
-          href="/developer/signup"
+          href={devHref}
           style={{
             display: 'inline-flex', alignItems: 'center', gap: '0.4rem',
             padding: '0.45rem 1rem', fontSize: '0.825rem', fontWeight: 600,
@@ -89,7 +90,7 @@ function Navbar() {
 }
 
 /* ── Section: Hero ───────────────────────────────── */
-function Hero() {
+function Hero({ devHref, companyHref }: { devHref: string; companyHref: string }) {
   return (
     <section
       className="grid-pattern"
@@ -165,7 +166,7 @@ function Hero() {
       {/* Dual CTA */}
       <div className="anim-fade-up d4" style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', justifyContent: 'center', marginBottom: '2.25rem' }}>
         <Link
-          href="/company/signup"
+          href={companyHref}
           style={{
             display: 'inline-flex', alignItems: 'center', gap: '0.5rem',
             padding: '0.75rem 1.5rem',
@@ -181,7 +182,7 @@ function Hero() {
           <ArrowRight size={16} />
         </Link>
         <Link
-          href="/developer/signup"
+          href={devHref}
           style={{
             display: 'inline-flex', alignItems: 'center', gap: '0.5rem',
             padding: '0.75rem 1.5rem',
@@ -251,7 +252,7 @@ function StatsBar() {
 }
 
 /* ── Section: How it works ───────────────────────── */
-function HowItWorks() {
+function HowItWorks({ devHref, companyHref }: { devHref: string; companyHref: string }) {
   return (
     <section id="how" style={{ padding: '6rem 2.5rem', maxWidth: 1100, margin: '0 auto', width: '100%' }}>
       <div style={{ textAlign: 'center', marginBottom: '4rem' }}>
@@ -308,7 +309,7 @@ function HowItWorks() {
             ))}
           </div>
           <Link
-            href="/company/signup"
+            href={companyHref}
             style={{
               display: 'inline-flex', alignItems: 'center', gap: '0.5rem',
               padding: '0.7rem 1.25rem',
@@ -358,7 +359,7 @@ function HowItWorks() {
             ))}
           </div>
           <Link
-            href="/developer/signup"
+            href={devHref}
             style={{
               display: 'inline-flex', alignItems: 'center', gap: '0.5rem',
               padding: '0.7rem 1.25rem',
@@ -524,7 +525,7 @@ function FeaturedRepos() {
 }
 
 /* ── Section: Bottom CTA ─────────────────────────── */
-function BottomCTA() {
+function BottomCTA({ devHref, companyHref }: { devHref: string; companyHref: string }) {
   return (
     <section style={{ padding: '0 2.5rem 7rem', maxWidth: 1100, margin: '0 auto', width: '100%' }}>
       <div
@@ -556,7 +557,7 @@ function BottomCTA() {
             Stop letting good issues rot in your tracker. Connect your repo and turn your backlog into a paid opportunity for the best developers in the world.
           </p>
           <Link
-            href="/company/signup"
+            href={companyHref}
             style={{
               display: 'inline-flex', alignItems: 'center', gap: '0.5rem',
               padding: '0.8rem 1.5rem',
@@ -583,7 +584,7 @@ function BottomCTA() {
             You already use Claude to code. Now get paid for it. Browse issues across top open-source repos, fix them in our embedded editor, and collect your salary.
           </p>
           <Link
-            href="/developer/signup"
+            href={devHref}
             style={{
               display: 'inline-flex', alignItems: 'center', gap: '0.5rem',
               padding: '0.8rem 1.5rem',
@@ -633,17 +634,23 @@ function Footer() {
 }
 
 /* ── Page ────────────────────────────────────────── */
-export default function LandingPage() {
+export default async function LandingPage() {
+  const cookieStore = await cookies()
+  const token = cookieStore.get('token')?.value
+
+  const devHref = token ? '/developer/repos' : '/developer/signup'
+  const companyHref = token ? '/developer/repos' : '/company/signup'
+
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg-0)', display: 'flex', flexDirection: 'column' }}>
-      <Navbar />
+      <Navbar devHref={devHref} companyHref={companyHref} />
       <main style={{ flex: 1 }}>
-        <Hero />
+        <Hero devHref={devHref} companyHref={companyHref} />
         <StatsBar />
-        <HowItWorks />
+        <HowItWorks devHref={devHref} companyHref={companyHref} />
         <FlowSteps />
         <FeaturedRepos />
-        <BottomCTA />
+        <BottomCTA devHref={devHref} companyHref={companyHref} />
       </main>
       <Footer />
     </div>
