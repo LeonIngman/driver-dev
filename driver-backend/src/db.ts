@@ -5,14 +5,28 @@ export const sql = postgres(process.env.DATABASE_URL!)
 /** Run once at startup to ensure tables exist */
 export async function initDb() {
   await sql`
+    CREATE TABLE IF NOT EXISTS companies (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      org_name TEXT NOT NULL,
+      email TEXT UNIQUE,
+      password_hash TEXT,
+      github_id TEXT UNIQUE,
+      plan TEXT NOT NULL DEFAULT 'Free',
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `
+
+  await sql`
     CREATE TABLE IF NOT EXISTS github_installations (
       id SERIAL PRIMARY KEY,
       installation_id INTEGER UNIQUE NOT NULL,
       account_login TEXT NOT NULL,
       account_type TEXT NOT NULL DEFAULT 'Organization',
+      company_id UUID REFERENCES companies(id),
       created_at TIMESTAMPTZ DEFAULT NOW()
     )
   `
+
   await sql`
     CREATE TABLE IF NOT EXISTS connected_repos (
       id SERIAL PRIMARY KEY,
@@ -24,6 +38,7 @@ export async function initDb() {
       UNIQUE(installation_id, repo_id)
     )
   `
+
   await sql`
     CREATE TABLE IF NOT EXISTS configured_issues (
       id SERIAL PRIMARY KEY,
@@ -49,18 +64,6 @@ export async function initDb() {
       github_id TEXT UNIQUE,
       anthropic_api_key TEXT,
       preferred_model TEXT NOT NULL DEFAULT 'claude-opus-4-6',
-      created_at TIMESTAMPTZ DEFAULT NOW()
-    )
-  `
-
-  await sql`
-    CREATE TABLE IF NOT EXISTS companies (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      org_name TEXT NOT NULL,
-      email TEXT UNIQUE NOT NULL,
-      password_hash TEXT,
-      github_id TEXT UNIQUE,
-      plan TEXT NOT NULL DEFAULT 'Free',
       created_at TIMESTAMPTZ DEFAULT NOW()
     )
   `

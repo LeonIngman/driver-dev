@@ -140,11 +140,21 @@ app.get('/auth/github/callback', async (c) => {
     account: { login: string; type: string }
   }
 
+  const [company] = await sql`
+    INSERT INTO companies (org_name, github_id)
+    VALUES (${installation.account.login}, ${String(installation.id)})
+    ON CONFLICT (github_id) DO UPDATE SET org_name = EXCLUDED.org_name
+    RETURNING id
+  `
+
+  console.log(`[companies] GitHub install persisted: id=${company.id} org=${installation.account.login}`)
+
   await sql`
-    INSERT INTO github_installations (installation_id, account_login, account_type)
-    VALUES (${installation.id}, ${installation.account.login}, ${installation.account.type})
+    INSERT INTO github_installations (installation_id, account_login, account_type, company_id)
+    VALUES (${installation.id}, ${installation.account.login}, ${installation.account.type}, ${company.id})
     ON CONFLICT (installation_id) DO UPDATE SET
-      account_login = EXCLUDED.account_login
+      account_login = EXCLUDED.account_login,
+      company_id = EXCLUDED.company_id
   `
 
   return c.redirect(`${frontendUrl}/company/connect-repo?installation_id=${installationId}`)
