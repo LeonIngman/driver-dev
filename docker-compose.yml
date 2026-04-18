@@ -48,6 +48,13 @@ services:
     volumes:
       - ./driver-backend:/app
       - /app/node_modules
+    develop:
+      watch:
+        - action: sync
+          path: ./driver-backend/src
+          target: /app/src
+        - action: rebuild
+          path: ./driver-backend/package.json
 
   frontend:
     build:
@@ -55,6 +62,7 @@ services:
     restart: unless-stopped
     environment:
       NEXT_PUBLIC_API_URL: http://localhost:3001
+      API_URL: http://backend:3001
     ports:
       - "3000:3000"
     depends_on:
@@ -62,6 +70,16 @@ services:
     volumes:
       - ./driver-frontend:/app
       - /app/node_modules
+    develop:
+      watch:
+        - action: sync
+          path: ./driver-frontend
+          target: /app
+          ignore:
+            - node_modules/
+            - .next/
+        - action: rebuild
+          path: ./driver-frontend/package.json
 
 volumes:
   postgres_data:
