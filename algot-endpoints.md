@@ -69,3 +69,43 @@ Redirects the browser to GitHub OAuth. After authorization, GitHub redirects bac
   "earned": "$3,240"
 }
 ```
+
+---
+
+## `/editor`
+
+Session ID is passed as a query param: `/editor?sessionId=<id>`
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/sessions/:id` | Fetch session data — issue, file tree, diff stats, usage, user. |
+| `GET` | `/sessions/:id/messages` | Fetch chat message history for this session. |
+| `POST` | `/sessions/:id/messages` | Send a message to Claude. Returns Claude's reply. |
+| `POST` | `/sessions/:id/submit` | Submit the fix for company review. Redirects to `/repos/detail` on success. |
+
+### `GET /sessions/:id`
+
+**Response** `200`
+```json
+{
+  "issue": { "id": 384, "title": "Fix race condition in streaming response handler", "labels": ["bug", "P1"], "bounty": "$450", "repoName": "claude-tools" },
+  "files": [{ "name": "src", "type": "folder", "children": [{ "name": "streaming.ts", "type": "file", "active": true, "ext": "ts" }] }],
+  "diff": { "added": 24, "removed": 3 },
+  "usage": { "tokens": 2400, "cost": "≈ $0.007" },
+  "user": { "initials": "JK" }
+}
+```
+
+### `GET /sessions/:id/messages`
+
+**Response** `200` — array of `{ "role": "claude" | "user" | "system", "content": "..." }`
+
+### `POST /sessions/:id/messages`
+
+**Body** `{ "content": "..." }`
+
+**Response** `200` — `{ "role": "claude", "content": "..." }`
+
+### `POST /sessions/:id/submit`
+
+**Response** `200` → redirect to `/repos/detail`
