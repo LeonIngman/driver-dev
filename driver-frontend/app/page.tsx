@@ -468,7 +468,7 @@ function FeaturedRepos() {
           </h2>
         </div>
         <Link
-          href="/repos"
+          href="/developer/repos"
           className="anim-fade-up d3"
           style={{
             display: 'inline-flex', alignItems: 'center', gap: '0.5rem',
@@ -486,7 +486,7 @@ function FeaturedRepos() {
         {previews.map((r, i) => (
           <Link
             key={r.repo}
-            href="/repos"
+            href="/developer/repos"
             className={`card card-hover anim-fade-up d${i + 2}`}
             style={{ display: 'block', padding: '1.25rem', textDecoration: 'none' }}
           >
