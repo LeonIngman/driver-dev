@@ -56,7 +56,7 @@ function FolderIcon() {
   )
 }
 
-function TreeNode({ node, depth = 0 }: { node: FileNode; depth?: number }) {
+function TreeNode({ node, depth = 0, onRemove }: { node: FileNode; depth?: number; onRemove: (name: string) => void }) {
   return (
     <>
       <div style={{
@@ -69,13 +69,25 @@ function TreeNode({ node, depth = 0 }: { node: FileNode; depth?: number }) {
         fontFamily: node.type === 'file' ? 'var(--font-mono)' : undefined,
       }}>
         {node.type === 'folder' ? <FolderIcon /> : <FileIcon ext={node.ext} />}
-        <span>{node.name}</span>
+        <span style={{ flex: 1 }}>{node.name}</span>
+        {node.type === 'file' && (
+          <button
+            onClick={e => { e.stopPropagation(); onRemove(node.name) }}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', lineHeight: 1, padding: '0 2px', fontSize: '0.8rem', display: 'flex', alignItems: 'center' }}
+          >×</button>
+        )}
       </div>
       {node.children?.map(child => (
-        <TreeNode key={child.name} node={child} depth={depth + 1} />
+        <TreeNode key={child.name} node={child} depth={depth + 1} onRemove={onRemove} />
       ))}
     </>
   )
+}
+
+function removeFile(nodes: FileNode[], name: string): FileNode[] {
+  return nodes
+    .filter(n => n.name !== name)
+    .map(n => n.children ? { ...n, children: removeFile(n.children, name) } : n)
 }
 
 /* ── Page ────────────────────────────────────────── */
@@ -85,12 +97,15 @@ export default function Editor() {
   const sessionId = params.get('sessionId')
 
   const [session, setSession] = useState<Session | null>(null)
+  const [files, setFiles] = useState<FileNode[]>([])
   const [messages, setMessages] = useState<Message[]>([])
   const [chatInput, setChatInput] = useState('')
   const [sending, setSending] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [code, setCode] = useState(DEFAULT_CODE)
   const [activeTab, setActiveTab] = useState<'Code' | 'Preview'>('Code')
+  const [chatOpen, setChatOpen] = useState(true)
+  const [filesOpen, setFilesOpen] = useState(true)
   // Preview tab is a placeholder — will be replaced with e2b sandbox
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
@@ -101,6 +116,7 @@ export default function Editor() {
       .then((data: Session | null) => {
         if (data) {
           setSession(data)
+          setFiles(data.files ?? [])
           if (data.activeFile?.content) setCode(data.activeFile.content)
         }
       })
@@ -151,7 +167,6 @@ export default function Editor() {
   const issue = session?.issue
   const diff = session?.diff
   const usage = session?.usage
-  const files = session?.files ?? []
   const userInitials = session?.user.initials ?? '?'
   const changedCount = files.filter(f => f.type === 'file' && f.active).length
   const activeFile = session?.activeFile ?? { name: 'index.html', content: '' }
@@ -203,16 +218,31 @@ export default function Editor() {
 
         {/* ── PANEL 1: Chat ──────────────────────────── */}
         <div style={{
-          width: 340, minWidth: 340,
+          width: chatOpen ? 340 : 32, minWidth: chatOpen ? 340 : 32,
           background: 'var(--bg-1)', borderRight: '1px solid var(--border)',
           display: 'flex', flexDirection: 'column', overflow: 'hidden',
         }}>
+          {/* Collapsed strip */}
+          {!chatOpen && (
+            <button
+              onClick={() => setChatOpen(true)}
+              title="Expand chat"
+              style={{ flex: 1, background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-3)' }}
+            >
+              <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M5 2.5L9 6.5L5 10.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            </button>
+          )}
+
+          {chatOpen && (<>
           <div style={{ padding: '0.75rem 1rem', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <AnthropicMark />
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-1)' }}>Claude</div>
             </div>
             <span className="badge badge-muted" style={{ fontSize: '0.6rem', fontFamily: 'var(--font-mono)' }}>claude-3-7-sonnet</span>
+            <button onClick={() => setChatOpen(false)} title="Collapse chat" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', display: 'flex', alignItems: 'center', padding: '0.1rem' }}>
+              <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M8 2.5L4 6.5L8 10.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            </button>
           </div>
 
           {issue && (
@@ -307,23 +337,41 @@ export default function Editor() {
               </div>
             )}
           </div>
+          </>)}
         </div>
 
         {/* ── PANEL 2: File tree ─────────────────────── */}
         <div style={{
-          width: 200, minWidth: 200,
+          width: filesOpen ? 200 : 32, minWidth: filesOpen ? 200 : 32,
           background: 'var(--bg-1)', borderRight: '1px solid var(--border)',
           display: 'flex', flexDirection: 'column', overflow: 'hidden',
         }}>
+          {/* Collapsed strip */}
+          {!filesOpen && (
+            <button
+              onClick={() => setFilesOpen(true)}
+              title="Expand files"
+              style={{ flex: 1, background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-3)' }}
+            >
+              <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M5 2.5L9 6.5L5 10.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            </button>
+          )}
+
+          {filesOpen && (<>
           <div style={{ padding: '0.625rem 0.75rem', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <span style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Files</span>
-            {changedCount > 0 && (
-              <span className="badge badge-blue" style={{ fontSize: '0.58rem' }}>{changedCount} changed</span>
-            )}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+              {changedCount > 0 && (
+                <span className="badge badge-blue" style={{ fontSize: '0.58rem' }}>{changedCount} changed</span>
+              )}
+              <button onClick={() => setFilesOpen(false)} title="Collapse files" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', display: 'flex', alignItems: 'center', padding: '0.1rem' }}>
+                <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M8 2.5L4 6.5L8 10.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
+              </button>
+            </div>
           </div>
 
           <div style={{ flex: 1, overflowY: 'auto', padding: '0.375rem' }}>
-            {files.map(node => <TreeNode key={node.name} node={node} />)}
+            {files.map(node => <TreeNode key={node.name} node={node} onRemove={name => setFiles(f => removeFile(f, name))} />)}
           </div>
 
           {diff && (
@@ -338,6 +386,7 @@ export default function Editor() {
               </div>
             </div>
           )}
+          </>)}
         </div>
 
         {/* ── PANEL 3: Editor / Preview ─────────────── */}
