@@ -11,6 +11,7 @@ import {
   getRepoIssues,
 } from './github.js'
 import developers from './developers.js'
+import companies from './companies.js'
 
 const app = new Hono()
 
@@ -59,6 +60,7 @@ app.get('/', async (c) => {
 })
 
 app.route('/developers', developers)
+app.route('/companies', companies)
 
 // ─── GitHub Auth ───────────────────────────────────────────
 

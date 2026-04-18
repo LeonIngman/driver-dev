@@ -52,4 +52,16 @@ export async function initDb() {
       created_at TIMESTAMPTZ DEFAULT NOW()
     )
   `
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS companies (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      org_name TEXT NOT NULL,
+      email TEXT UNIQUE NOT NULL,
+      password_hash TEXT,
+      github_id TEXT UNIQUE,
+      plan TEXT NOT NULL DEFAULT 'Free',
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `
 }
