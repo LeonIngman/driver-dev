@@ -27,7 +27,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
-    entrypoint: ["/bin/sh", "-c", "chmod 600 /pgadmin4/pgpass && /entrypoint.sh"]
+    entrypoint:
+      ["/bin/sh", "-c", "chmod 600 /pgadmin4/pgpass && /entrypoint.sh"]
     volumes:
       - pgadmin_data:/var/lib/pgadmin
       - ./pgadmin/servers.json:/pgadmin4/servers.json:ro
@@ -49,7 +50,6 @@ services:
       BACKEND_URL: http://localhost:3001
       FRONTEND_URL: http://localhost:3000
       JWT_SECRET: ${JWT_SECRET}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
     ports:
       - "3001:3001"
     depends_on:
