@@ -73,6 +73,7 @@ services:
     environment:
       NEXT_PUBLIC_API_URL: http://localhost:3001
       API_URL: http://backend:3001
+      UNDER_CONSTRUCTION: ${UNDER_CONSTRUCTION:-}
     ports:
       - "3000:3000"
     depends_on:

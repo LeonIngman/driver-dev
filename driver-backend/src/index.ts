@@ -424,6 +424,15 @@ app.post('/api/sessions', requireDeveloper, async (c) => {
     RETURNING id
   `
 
+  // Auto-claim the issue so it appears on the developer's issues page
+  await sql`
+    INSERT INTO developer_issues (developer_id, issue_id, status)
+    SELECT ${developerId}, i.id, 'claimed'
+    FROM issues i
+    WHERE i.repo_full_name = ${fullName} AND i.issue_number = ${issueNumber}
+    ON CONFLICT (developer_id, issue_id) DO NOTHING
+  `
+
   return c.json({ sessionId: session.id })
 })
 
